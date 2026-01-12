@@ -27,7 +27,7 @@ export MAPPA_API_KEY="your-api-key"
 ```
 
 ```ts
-import { Mappa } from "mappa-node";
+import { Mappa } from "@mappa-ai/mappa-node";
 
 const client = new Mappa("your-api-key");
 ```
@@ -37,7 +37,7 @@ const client = new Mappa("your-api-key");
 ### Instantiate the client
 
 ```ts
-import { Mappa } from "mappa-node";
+import { Mappa } from "@mappa-ai/mappa-node";
 
 const mappa = new Mappa(); // Reads MAPPA_API_KEY by default
 ```
