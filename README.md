@@ -5,13 +5,13 @@ A lightweight JavaScript/TypeScript client for the Mappa API.
 ## Installation
 
 ```bash
-npm install mappa-node
+npm install @mappa-ai/mappa-node
 # or
-yarn add mappa-node
+yarn add @mappa-ai/mappa-node
 # or
-pnpm install mappa-node
+pnpm install @mappa-ai/mappa-node
 # or
-bun add mappa-node
+bun add @mappa-ai/mappa-node
 ```
 
 ## Requirements
