@@ -1,1 +1,1 @@
-console.info("Hello via Bun!");
+export * from "$/mappa";
