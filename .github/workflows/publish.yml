@@ -23,4 +23,4 @@ jobs:
       - run: bun install
       - run: bun run lazycheck
       - run: bun run build
-      - run: bun publish
+      - run: bun npm@latest publish
