@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   publish-package:
+    environment: production
     name: publish-package
     runs-on: ubuntu-latest
     steps:
