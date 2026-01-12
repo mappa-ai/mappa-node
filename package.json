@@ -1,5 +1,5 @@
 {
-	"name": "mappa-node",
+	"name": "@mappa-ai/mappa-node",
 	"module": "src/index.ts",
 	"type": "module",
 	"license": "MIT",
@@ -32,7 +32,7 @@
 		"url": "git+https://github.com/mappa-ai/mappa-node.git"
 	},
 	"scripts": {
-		"build": "tsdown src/index.ts --format esm,cjs --dts",
+		"build": "tsdown",
 		"type-check": "tsc --noEmit",
 		"test": "bun test",
 		"check": "biome check",
