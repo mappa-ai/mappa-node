@@ -19,7 +19,7 @@ jobs:
         with:
           bun-version: "latest"
 
-      - run: bun ci
+      - run: bun install
       - run: bun run lazycheck
       - run: bun run build
-      - run: bunx publish
+      - run: bun pm pack && npm publish ./*.tgz
