@@ -33,10 +33,11 @@
 	},
 	"scripts": {
 		"build": "tsdown",
-		"type-check": "tsc --noEmit",
+		"typecheck": "tsc --noEmit",
 		"test": "bun test",
 		"check": "biome check",
-		"check:fix": "biome check --fix"
+		"check:fix": "biome check --fix",
+		"lazycheck": "bun run check && bun run typecheck"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.3.11",
