@@ -4,10 +4,12 @@
 	"type": "module",
 	"version": "0.1.0",
 	"license": "MIT",
-	"private": false,
 	"files": [
 		"dist/**"
 	],
+	"publishConfig": {
+		"access": "public"
+	},
 	"exports": {
 		".": {
 			"import": {
