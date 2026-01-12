@@ -2,6 +2,22 @@
 	"name": "mappa-node",
 	"module": "src/index.ts",
 	"type": "module",
+	"files": [
+		"dist/**"
+	],
+	"devEngines": {
+		"runtime": {
+			"name": "bun",
+			"version": ">=1.3.0"
+		},
+		"packageManager": {
+			"name": "bun"
+		}
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/mappa-ai/mappa-node.git"
+	},
 	"scripts": {
 		"build": "tsdown src/index.ts --format esm,cjs --dts",
 		"type-check": "tsc --noEmit",
