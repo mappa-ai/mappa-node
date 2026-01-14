@@ -1,5 +1,5 @@
 import type { Transport } from "$/resources/transport";
-import type { MediaObject } from "$/types";
+import type { FileDeleteReceipt, MediaObject } from "$/types";
 
 export type UploadRequest = {
 	file: Blob | ArrayBuffer | Uint8Array | ReadableStream<Uint8Array>;
@@ -56,6 +56,28 @@ export class FilesResource {
 			idempotencyKey: req.idempotencyKey,
 			requestId: req.requestId,
 			signal: req.signal,
+			retryable: true,
+		});
+
+		return res.data;
+	}
+
+	async delete(
+		mediaId: string,
+		opts?: {
+			idempotencyKey?: string;
+			requestId?: string;
+			signal?: AbortSignal;
+		},
+	): Promise<FileDeleteReceipt> {
+		if (!mediaId) throw new Error("mediaId is required");
+
+		const res = await this.transport.request<FileDeleteReceipt>({
+			method: "DELETE",
+			path: `/v1/files/${encodeURIComponent(mediaId)}`,
+			idempotencyKey: opts?.idempotencyKey,
+			requestId: opts?.requestId,
+			signal: opts?.signal,
 			retryable: true,
 		});
 

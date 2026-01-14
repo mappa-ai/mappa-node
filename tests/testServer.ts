@@ -92,8 +92,8 @@ export class TestApiServer {
 		this.requests.push(record);
 
 		// Simple auth expectation for integration tests.
-		const auth = req.headers.get("Mappa-Api-Key");
-		if (auth !== "test-api-key") {
+		const apiKey = req.headers.get("Mappa-Api-Key");
+		if (apiKey !== "test-api-key") {
 			return this.json(
 				401,
 				{ error: { code: "unauthorized", message: "Unauthorized" } },
@@ -175,6 +175,24 @@ export class TestApiServer {
 			);
 		}
 
+		if (req.method === "DELETE" && path.startsWith("/v1/files/")) {
+			const mediaId = decodeURIComponent(path.slice("/v1/files/".length));
+			if (!this.lastUploadedMediaId || mediaId !== this.lastUploadedMediaId) {
+				return this.json(
+					404,
+					{ error: { code: "not_found", message: "File not found" } },
+					{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+				);
+			}
+
+			this.lastUploadedMediaId = undefined;
+			return this.json(
+				200,
+				{ mediaId, deleted: true },
+				{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+			);
+		}
+
 		if (req.method === "POST" && path === "/v1/reports/jobs") {
 			const body = record.json as
 				| { media?: { mediaId?: unknown; url?: unknown } }
@@ -244,6 +262,36 @@ export class TestApiServer {
 			);
 		}
 
+		if (
+			req.method === "POST" &&
+			path.endsWith("/cancel") &&
+			path.startsWith("/v1/jobs/")
+		) {
+			const jobId = decodeURIComponent(
+				path.slice("/v1/jobs/".length).replace(/\/cancel$/, ""),
+			);
+			const reportId = this.jobToReportId.get(jobId);
+			if (!reportId) {
+				return this.json(
+					404,
+					{ error: { code: "not_found", message: "Job not found" } },
+					{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+				);
+			}
+			return this.json(
+				200,
+				{
+					id: jobId,
+					type: "report.generate",
+					status: "canceled",
+					createdAt: new Date().toISOString(),
+					updatedAt: new Date().toISOString(),
+					requestId: req.headers.get("x-request-id") ?? randomUUID(),
+				},
+				{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+			);
+		}
+
 		if (req.method === "GET" && path.startsWith("/v1/jobs/")) {
 			const jobId = decodeURIComponent(path.slice("/v1/jobs/".length));
 			const calls = (this.jobCalls.get(jobId) ?? 0) + 1;
@@ -288,36 +336,6 @@ export class TestApiServer {
 					reportId,
 				},
 				{ "x-request-id": base.requestId },
-			);
-		}
-
-		if (
-			req.method === "POST" &&
-			path.endsWith("/cancel") &&
-			path.startsWith("/v1/jobs/")
-		) {
-			const jobId = decodeURIComponent(
-				path.slice("/v1/jobs/".length).replace(/\/cancel$/, ""),
-			);
-			const reportId = this.jobToReportId.get(jobId);
-			if (!reportId) {
-				return this.json(
-					404,
-					{ error: { code: "not_found", message: "Job not found" } },
-					{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
-				);
-			}
-			return this.json(
-				200,
-				{
-					id: jobId,
-					type: "report.generate",
-					status: "canceled",
-					createdAt: new Date().toISOString(),
-					updatedAt: new Date().toISOString(),
-					requestId: req.headers.get("x-request-id") ?? randomUUID(),
-				},
-				{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
 			);
 		}
 

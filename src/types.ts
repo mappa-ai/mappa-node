@@ -156,6 +156,11 @@ export type MediaObject = {
 	sizeBytes?: number;
 };
 
+export type FileDeleteReceipt = {
+	mediaId: string;
+	deleted: true;
+};
+
 /**
  * Options for long-polling job completion.
  */

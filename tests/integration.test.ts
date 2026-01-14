@@ -72,7 +72,7 @@ describe("SDK integration", () => {
 	});
 
 	test("maps 429 to RateLimitError when retries are exhausted", async () => {
-		api.state.rateLimitPingCount = 2;
+		api.state.rateLimitPingCount = 1;
 
 		const client = new Mappa({
 			apiKey: "test-api-key",
@@ -136,6 +136,29 @@ describe("SDK integration", () => {
 		expect(fd?.get("contentType")).toBe("application/octet-stream");
 		const filePart = fd?.get("file");
 		expect(filePart instanceof Blob).toBe(true);
+	});
+
+	test("files.delete deletes an uploaded file", async () => {
+		const client = new Mappa({ apiKey: "test-api-key", baseUrl: api.baseUrl });
+
+		const media = await client.files.upload({
+			file: new Uint8Array([1, 2, 3]),
+			contentType: "application/octet-stream",
+			filename: "to-delete.bin",
+		});
+
+		const receipt = await client.files.delete(media.mediaId, {
+			requestId: "req_delete_1",
+		});
+
+		expect(receipt.deleted).toBe(true);
+		expect(receipt.mediaId).toBe(media.mediaId);
+
+		const delReq = api.requests.findLast((r) =>
+			r.path.startsWith("/v1/files/"),
+		);
+		expect(delReq?.method).toBe("DELETE");
+		expect(delReq?.headers.get("x-request-id")).toBe("req_delete_1");
 	});
 
 	test("reports.generateFromFile uploads then waits and returns report", async () => {
