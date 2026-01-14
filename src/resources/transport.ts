@@ -172,7 +172,7 @@ export class Transport {
 
 		const requestId = req.requestId ?? randomId("req");
 		const headers: Record<string, string> = {
-			Authorization: `Bearer ${this.opts.apiKey}`,
+			"Mappa-Api-Key": this.opts.apiKey,
 			"X-Request-Id": requestId,
 			...(this.opts.userAgent ? { "User-Agent": this.opts.userAgent } : {}),
 			...(this.opts.defaultHeaders ?? {}),
@@ -287,7 +287,6 @@ export class Transport {
 					headers: res.headers,
 				};
 			} catch (err) {
-				// Timeout cleanup is handled in finally; avoid duplicate clearTimeout.
 				this.opts.telemetry?.onError?.({ url, requestId, error: err });
 
 				const decision = shouldRetry(req, err);

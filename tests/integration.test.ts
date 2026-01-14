@@ -31,7 +31,7 @@ describe("SDK integration", () => {
 
 		const req = api.requests.at(-1);
 		expect(req?.path).toBe("/v1/health/ping");
-		expect(req?.headers.get("authorization")).toBe("Bearer test-api-key");
+		expect(req?.headers.get("Mappa-Api-Key")).toBe("test-api-key");
 		expect(req?.headers.get("x-request-id")).toBeTruthy();
 	});
 

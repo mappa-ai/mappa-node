@@ -92,8 +92,8 @@ export class TestApiServer {
 		this.requests.push(record);
 
 		// Simple auth expectation for integration tests.
-		const auth = req.headers.get("authorization");
-		if (auth !== "Bearer test-api-key") {
+		const auth = req.headers.get("Mappa-Api-Key");
+		if (auth !== "test-api-key") {
 			return this.json(
 				401,
 				{ error: { code: "unauthorized", message: "Unauthorized" } },
