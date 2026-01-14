@@ -102,4 +102,3 @@ This SDK targets modern runtimes (Node 18+/Bun/modern browsers).
 - Documentation updated for new DX helpers.
 - New behavior has at least one usage example (README or minimal test).
 - No accidental breaking changes (types and runtime behavior).
-

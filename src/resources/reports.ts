@@ -13,9 +13,16 @@ import type {
 } from "$/types";
 import { randomId } from "$/utils";
 
+/**
+ * Runtime validation for the public `MediaRef` union.
+ *
+ * `MediaRef` is part of the SDK's public surface and can be constructed from
+ * untyped input at runtime. We defensively validate it here to:
+ *
+ * - enforce that exactly one of `{ url }` or `{ mediaId }` is provided
+ * - provide actionable errors early (before making a network call)
+ */
 function validateMedia(media: MediaRef): void {
-	// We validate at runtime because MediaRef is part of the public SDK surface and
-	// can be constructed from untyped user input.
 	const m = media as unknown;
 	const isObj = (v: unknown): v is Record<string, unknown> =>
 		v !== null && typeof v === "object";
@@ -33,19 +40,58 @@ function validateMedia(media: MediaRef): void {
 		throw new Error("media.mediaId must be a string");
 }
 
+/**
+ * Request shape for {@link ReportsResource.createJobFromFile}.
+ *
+ * This helper performs two API calls as one logical operation:
+ * 1) Upload bytes via `files.upload()` (multipart)
+ * 2) Create a report job via {@link ReportsResource.createJob} using the returned `{ mediaId }`
+ *
+ * Differences vs {@link ReportCreateJobRequest}:
+ * - `media` is derived from the upload result and therefore omitted.
+ * - `idempotencyKey` applies to the *whole* upload + create-job sequence.
+ * - `requestId` is forwarded to both requests for end-to-end correlation.
+ *
+ * Abort behavior:
+ * - `signal` (from {@link UploadRequest}) is applied to the upload request.
+ *   Job creation only runs after a successful upload.
+ */
 export type ReportCreateJobFromFileRequest = Omit<
 	ReportCreateJobRequest,
 	"media" | "idempotencyKey" | "requestId"
 > &
 	Omit<UploadRequest, "filename"> & {
+		/**
+		 * Optional filename to attach to the upload.
+		 *
+		 * When omitted, the upload layer may infer it (e.g. from a `File` object).
+		 */
 		filename?: string;
 		/**
 		 * Idempotency for the upload + job creation sequence.
 		 */
 		idempotencyKey?: string;
+		/**
+		 * Optional request correlation ID forwarded to both the upload and the job creation call.
+		 */
 		requestId?: string;
 	};
 
+/**
+ * Reports API resource.
+ *
+ * Responsibilities:
+ * - Create report jobs (`POST /v1/reports/jobs`).
+ * - Fetch reports by report ID (`GET /v1/reports/:reportId`).
+ * - Fetch reports by job ID (`GET /v1/reports/by-job/:jobId`).
+ *
+ * Convenience helpers:
+ * - {@link ReportsResource.createJobFromFile} orchestrates `files.upload()` + {@link ReportsResource.createJob}.
+ * - {@link ReportsResource.generate} / {@link ReportsResource.generateFromFile} are script-friendly wrappers that
+ *   create a job, wait for completion, and then fetch the final report.
+ *
+ * For production systems, prefer `createJob*()` plus webhooks or streaming job events rather than blocking waits.
+ */
 export class ReportsResource {
 	constructor(
 		private readonly transport: Transport,
@@ -55,6 +101,19 @@ export class ReportsResource {
 		},
 	) {}
 
+	/**
+	 * Create a new report job.
+	 *
+	 * Behavior:
+	 * - Validates {@link MediaRef} at runtime (must provide exactly one of `{ url }` or `{ mediaId }`).
+	 * - Applies an idempotency key: uses `req.idempotencyKey` when provided; otherwise generates a best-effort default.
+	 * - Forwards `req.requestId` to the transport for end-to-end correlation.
+	 *
+	 * The returned receipt includes a {@link ReportRunHandle} (`receipt.handle`) which can be used to:
+	 * - stream job events
+	 * - wait for completion and fetch the final report
+	 * - cancel the job, or fetch job/report metadata
+	 */
 	async createJob(req: ReportCreateJobRequest): Promise<ReportJobReceipt> {
 		validateMedia(req.media);
 

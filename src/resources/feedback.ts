@@ -32,7 +32,4 @@ export class FeedbackResource {
 
 		return res.data;
 	}
-
-	// Optional: policy() endpoint recommended for transparency.
-	// async policy(): Promise<FeedbackPolicy> { ... }
 }
