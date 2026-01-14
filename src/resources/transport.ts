@@ -279,7 +279,7 @@ export class Transport {
 					headers: res.headers,
 				};
 			} catch (err) {
-				clearTimeout(timeout);
+				// Timeout cleanup is handled in finally; avoid duplicate clearTimeout.
 				this.opts.telemetry?.onError?.({ url, requestId, error: err });
 
 				const decision = shouldRetry(req, err);

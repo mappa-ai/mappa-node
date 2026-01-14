@@ -1,4 +1,7 @@
 // src/resources/webhooks.ts
+function isObject(v: unknown): v is Record<string, unknown> {
+	return v !== null && typeof v === "object";
+}
 
 /**
  * Async signature verification using WebCrypto (works in modern Node and browsers).
@@ -39,8 +42,28 @@ export class WebhooksResource {
 	parseEvent<T = unknown>(
 		payload: string,
 	): { id: string; type: string; createdAt: string; data: T } {
-		const obj = JSON.parse(payload);
-		return obj;
+		const raw: unknown = JSON.parse(payload);
+		if (!isObject(raw))
+			throw new Error("Invalid webhook payload: not an object");
+		const obj = raw;
+
+		const id = obj.id;
+		const type = obj.type;
+		const createdAt = obj.createdAt;
+
+		if (typeof id !== "string")
+			throw new Error("Invalid webhook payload: id must be a string");
+		if (typeof type !== "string")
+			throw new Error("Invalid webhook payload: type must be a string");
+		if (typeof createdAt !== "string")
+			throw new Error("Invalid webhook payload: createdAt must be a string");
+
+		return {
+			id,
+			type,
+			createdAt,
+			data: "data" in obj ? (obj.data as T) : (undefined as unknown as T),
+		};
 	}
 }
 
