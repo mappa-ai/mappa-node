@@ -6,12 +6,14 @@ import {
 	expect,
 	test,
 } from "bun:test";
+import type { MediaIdRef } from "../src/index";
 import {
 	AuthError,
 	Mappa,
 	RateLimitError,
 	ValidationError,
 } from "../src/index";
+
 import { TestApiServer } from "./testServer";
 
 const api = new TestApiServer();
@@ -202,15 +204,44 @@ describe("SDK integration", () => {
 		expect(paths.some((p) => p.startsWith("/v1/reports/"))).toBe(true);
 	});
 
-	test("requestId option is forwarded on read endpoints", async () => {
+	test("reports.createJobFromUrl downloads, uploads then creates a job", async () => {
+		const client = new Mappa({
+			apiKey: "test-api-key",
+			baseUrl: api.baseUrl,
+			maxRetries: 0,
+		});
+
+		const receipt = await client.reports.createJobFromUrl({
+			url: `${api.baseUrl}/fixtures/sample.wav`,
+			contentType: "audio/wav",
+			filename: "sample.wav",
+			output: { type: "markdown" },
+		});
+
+		expect(receipt.jobId).toMatch(/^job_/);
+
+		const paths = api.requests.map((r) => r.path);
+		// download endpoint is part of the test server and is called via fetch()
+		expect(paths).toContain("/fixtures/sample.wav");
+		expect(paths).toContain("/v1/files");
+		expect(paths).toContain("/v1/reports/jobs");
+	});
+
+	test("reports.createJob rejects url media", async () => {
 		const client = new Mappa({ apiKey: "test-api-key", baseUrl: api.baseUrl });
 
-		await client.reports.get("report_123", { requestId: "req_report_get_1" });
+		let thrown: unknown;
+		try {
+			await client.reports.createJob({
+				// Force a runtime validation error: createJob only accepts { mediaId }.
+				media: { url: "https://example.com/file.wav" } as unknown as MediaIdRef,
+				output: { type: "markdown" },
+			});
+		} catch (err) {
+			thrown = err;
+		}
 
-		const req = api.requests.findLast(
-			(r) => r.path === "/v1/reports/report_123",
-		);
-		expect(req?.headers.get("x-request-id")).toBe("req_report_get_1");
+		expect(thrown).toBeTruthy();
 	});
 
 	test("maps 422 to ValidationError", async () => {

@@ -91,6 +91,18 @@ export class TestApiServer {
 
 		this.requests.push(record);
 
+		// Test fixtures are publicly accessible (used by createJobFromUrl which should not
+		// forward API credentials to arbitrary remote servers).
+		if (req.method === "GET" && path.startsWith("/fixtures/")) {
+			return new Response(new Uint8Array([1, 2, 3, 4]), {
+				status: 200,
+				headers: {
+					"content-type": "audio/wav",
+					"x-request-id": req.headers.get("x-request-id") ?? randomUUID(),
+				},
+			});
+		}
+
 		// Simple auth expectation for integration tests.
 		const apiKey = req.headers.get("Mappa-Api-Key");
 		if (apiKey !== "test-api-key") {
@@ -203,7 +215,21 @@ export class TestApiServer {
 			const url =
 				body?.media && "url" in body.media ? body.media.url : undefined;
 
-			// We accept either url or mediaId. For createJobFromFile we expect mediaId.
+			// Report job creation only accepts already-uploaded media references.
+			if (url !== undefined) {
+				return this.json(
+					422,
+					{
+						error: {
+							code: "invalid_media",
+							message:
+								"media.url is not supported; upload first and pass media.mediaId",
+						},
+					},
+					{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+				);
+			}
+
 			if (mediaId !== undefined && typeof mediaId !== "string") {
 				return this.json(
 					422,
@@ -211,18 +237,6 @@ export class TestApiServer {
 						error: {
 							code: "invalid_media",
 							message: "media.mediaId must be a string",
-						},
-					},
-					{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
-				);
-			}
-			if (url !== undefined && typeof url !== "string") {
-				return this.json(
-					422,
-					{
-						error: {
-							code: "invalid_media",
-							message: "media.url must be a string",
 						},
 					},
 					{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },

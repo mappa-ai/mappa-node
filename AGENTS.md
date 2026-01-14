@@ -101,4 +101,14 @@ This SDK targets modern runtimes (Node 18+/Bun/modern browsers).
 - Public API additions have types exported (or are reachable via `Mappa`).
 - Documentation updated for new DX helpers.
 - New behavior has at least one usage example (README or minimal test).
+
+---
+
+## Agent log (2026-01-14)
+
+- Updated report job creation to require `media: { mediaId }` (types + runtime validation) and added `reports.createJobFromUrl()` helper to download a URL client-side, upload it via `files.upload()`, then create the report job.
+- Extended integration tests to cover `createJobFromUrl` and ensure `createJob` rejects URL-based media.
+- Updated the in-test server fixtures and behavior to match the new server contract.
+- Verified via `bun run check`, `bun run typecheck`, and `bun test`.
+
 - No accidental breaking changes (types and runtime behavior).

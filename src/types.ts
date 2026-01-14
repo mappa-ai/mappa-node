@@ -16,6 +16,11 @@ export type MediaRef =
 	| { url: string; contentType?: string; filename?: string }
 	| { mediaId: string };
 
+/**
+ * A reference to an already-uploaded media object.
+ */
+export type MediaIdRef = { mediaId: string };
+
 export type ReportSectionSelection = {
 	id: string;
 	enabled?: boolean;
@@ -85,7 +90,13 @@ export type Subject = {
 
 export type ReportCreateJobRequest = {
 	subject?: Subject;
-	media: MediaRef;
+	/**
+	 * Reference to already-uploaded media.
+	 *
+	 * Note: Report job creation requires a `mediaId`. To start from a remote URL or local bytes,
+	 * use helper methods like `reports.createJobFromUrl()` / `reports.createJobFromFile()`.
+	 */
+	media: MediaIdRef;
 	output: ReportOutput;
 	options?: {
 		language?: string;

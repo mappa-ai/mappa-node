@@ -3,8 +3,8 @@ import type { JobsResource } from "$/resources/jobs";
 import type { Transport } from "$/resources/transport";
 import type {
 	JobEvent,
+	MediaIdRef,
 	MediaObject,
-	MediaRef,
 	Report,
 	ReportCreateJobRequest,
 	ReportJobReceipt,
@@ -14,30 +14,30 @@ import type {
 import { randomId } from "$/utils";
 
 /**
- * Runtime validation for the public `MediaRef` union.
+ * Runtime validation for the internal `MediaIdRef` requirement.
  *
- * `MediaRef` is part of the SDK's public surface and can be constructed from
- * untyped input at runtime. We defensively validate it here to:
- *
- * - enforce that exactly one of `{ url }` or `{ mediaId }` is provided
- * - provide actionable errors early (before making a network call)
+ * The public API server expects a `mediaId` when creating a report job.
+ * Use helpers like `createJobFromFile` / `createJobFromUrl` to start from bytes or a URL.
  */
-function validateMedia(media: MediaRef): void {
+function validateMedia(media: MediaIdRef): void {
 	const m = media as unknown;
 	const isObj = (v: unknown): v is Record<string, unknown> =>
 		v !== null && typeof v === "object";
 
 	if (!isObj(m)) throw new Error("media must be an object");
 
-	const hasUrl = (m as { url?: unknown }).url !== undefined;
-	const hasMediaId = (m as { mediaId?: unknown }).mediaId !== undefined;
-	if (hasUrl === hasMediaId) {
-		throw new Error("media must be exactly one of {url} or {mediaId}");
+	// Report job creation only supports already-uploaded media references.
+	// Use `createJobFromFile` / `createJobFromUrl` to start from bytes or a remote URL.
+	if ((m as { url?: unknown }).url !== undefined) {
+		throw new Error(
+			"media.url is not supported; pass { mediaId } or use createJobFromUrl()",
+		);
 	}
-	if (hasUrl && typeof (m as { url?: unknown }).url !== "string")
-		throw new Error("media.url must be a string");
-	if (hasMediaId && typeof (m as { mediaId?: unknown }).mediaId !== "string")
-		throw new Error("media.mediaId must be a string");
+
+	const mediaId = (m as { mediaId?: unknown }).mediaId;
+	if (typeof mediaId !== "string" || !mediaId) {
+		throw new Error("media.mediaId must be a non-empty string");
+	}
 }
 
 /**
@@ -78,6 +78,30 @@ export type ReportCreateJobFromFileRequest = Omit<
 	};
 
 /**
+ * Request shape for {@link ReportsResource.createJobFromUrl}.
+ *
+ * This helper performs two API calls as one logical operation:
+ * 1) Download bytes from a remote URL using `fetch()`
+ * 2) Upload bytes via `files.upload()` and then create a report job via {@link ReportsResource.createJob}
+ *
+ * Differences vs {@link ReportCreateJobRequest}:
+ * - `media` is derived from the upload result and therefore omitted.
+ * - `idempotencyKey` applies to the *whole* download + upload + create-job sequence.
+ * - `requestId` is forwarded to both upload and job creation calls.
+ */
+export type ReportCreateJobFromUrlRequest = Omit<
+	ReportCreateJobRequest,
+	"media" | "idempotencyKey" | "requestId"
+> & {
+	url: string;
+	contentType?: string;
+	filename?: string;
+	idempotencyKey?: string;
+	requestId?: string;
+	signal?: AbortSignal;
+};
+
+/**
  * Reports API resource.
  *
  * Responsibilities:
@@ -87,6 +111,7 @@ export type ReportCreateJobFromFileRequest = Omit<
  *
  * Convenience helpers:
  * - {@link ReportsResource.createJobFromFile} orchestrates `files.upload()` + {@link ReportsResource.createJob}.
+ * - {@link ReportsResource.createJobFromUrl} downloads a remote URL, uploads it, then calls {@link ReportsResource.createJob}.
  * - {@link ReportsResource.generate} / {@link ReportsResource.generateFromFile} are script-friendly wrappers that
  *   create a job, wait for completion, and then fetch the final report.
  *
@@ -105,7 +130,7 @@ export class ReportsResource {
 	 * Create a new report job.
 	 *
 	 * Behavior:
-	 * - Validates {@link MediaRef} at runtime (must provide exactly one of `{ url }` or `{ mediaId }`).
+	 * - Validates {@link MediaIdRef} at runtime (must provide `{ mediaId }`).
 	 * - Applies an idempotency key: uses `req.idempotencyKey` when provided; otherwise generates a best-effort default.
 	 * - Forwards `req.requestId` to the transport for end-to-end correlation.
 	 *
@@ -141,7 +166,7 @@ export class ReportsResource {
 	/**
 	 * Best-in-class DX: Upload a file and create a report job in one call.
 	 *
-	 * This keeps `createJob()` clean (it always accepts `media: {mediaId}|{url}`),
+	 * This keeps `createJob()` clean (it always accepts `media: { mediaId }`),
 	 * while providing a one-liner for the common "I have bytes" workflow.
 	 */
 	async createJobFromFile(
@@ -159,6 +184,82 @@ export class ReportsResource {
 
 		const upload = await this.files.upload({
 			file,
+			contentType,
+			filename,
+			idempotencyKey,
+			requestId,
+			signal,
+		});
+
+		return this.createJob({
+			...(rest as Omit<ReportCreateJobRequest, "media">),
+			media: { mediaId: upload.mediaId },
+			idempotencyKey,
+			requestId,
+		});
+	}
+
+	/**
+	 * Best-in-class DX: Download a file from a URL, upload it, and create a report job.
+	 *
+	 * This is the recommended way to start from a remote URL now that report job creation
+	 * only accepts `media: { mediaId }`.
+	 *
+	 * Workflow:
+	 * 1) `fetch(url)`
+	 * 2) Validate the response (2xx) and derive `contentType`
+	 * 3) `files.upload({ file: Blob, ... })`
+	 * 4) `createJob({ media: { mediaId }, ... })`
+	 *
+	 * Verification / safety:
+	 * - Only allows `http:` and `https:` URLs.
+	 * - Requires a resolvable `contentType` (from `req.contentType` or response header).
+	 */
+	async createJobFromUrl(
+		req: ReportCreateJobFromUrlRequest,
+	): Promise<ReportJobReceipt> {
+		const {
+			url,
+			contentType: contentTypeOverride,
+			filename,
+			idempotencyKey,
+			requestId,
+			signal,
+			...rest
+		} = req;
+
+		let parsed: URL;
+		try {
+			parsed = new URL(url);
+		} catch {
+			throw new Error("url must be a valid URL");
+		}
+		if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+			throw new Error("url must use http: or https:");
+		}
+
+		const res = await fetch(parsed.toString(), { signal });
+		if (!res.ok) {
+			throw new Error(`Failed to download url (status ${res.status})`);
+		}
+
+		const derivedContentType = res.headers.get("content-type") ?? undefined;
+		const contentType = contentTypeOverride ?? derivedContentType;
+		if (!contentType) {
+			throw new Error(
+				"contentType is required when it cannot be inferred from the download response",
+			);
+		}
+
+		if (typeof Blob === "undefined") {
+			throw new Error(
+				"Blob is not available in this runtime; cannot download and upload from url",
+			);
+		}
+
+		const blob = await res.blob();
+		const upload = await this.files.upload({
+			file: blob,
 			contentType,
 			filename,
 			idempotencyKey,
