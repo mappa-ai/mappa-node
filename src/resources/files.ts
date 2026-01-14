@@ -1,5 +1,3 @@
-// src/resources/files.ts
-
 import type { Transport } from "$/resources/transport";
 import type { MediaObject } from "$/types";
 

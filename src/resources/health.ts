@@ -1,5 +1,3 @@
-// src/resources/health.ts
-
 import type { Transport } from "$/resources/transport";
 
 export class HealthResource {

@@ -1,5 +1,3 @@
-// src/transport.ts
-
 import { ApiError, AuthError, RateLimitError, ValidationError } from "$/errors";
 import {
 	backoffMs,

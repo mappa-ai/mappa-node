@@ -1,24 +1,72 @@
-// src/Mappa.ts
-
+import { FeedbackResource } from "$/resources/feedback";
+import { FilesResource } from "$/resources/files";
+import { HealthResource } from "$/resources/health";
+import { JobsResource } from "$/resources/jobs";
+import { ReportsResource } from "$/resources/reports";
 import { type Telemetry, Transport } from "$/resources/transport";
-import { FeedbackResource } from "./resources/feedback";
-import { FilesResource } from "./resources/files";
-import { HealthResource } from "./resources/health";
-import { JobsResource } from "./resources/jobs";
-import { ReportsResource } from "./resources/reports";
-import { WebhooksResource } from "./resources/webhooks";
+import { WebhooksResource } from "$/resources/webhooks";
 
+/**
+ * Options for constructing a {@link Mappa} client.
+ */
 export type MappaClientOptions = {
+	/**
+	 * API key used for authenticating requests.
+	 */
 	apiKey: string;
-	baseUrl?: string; // default: https://api.mappa.ai
-	timeoutMs?: number; // default: 30_000 (upload/job creation). Waiting handled via jobs.wait
-	maxRetries?: number; // default: 2
+
+	/**
+	 * Base URL for the Mappa API.
+	 *
+	 * @defaultValue "https://api.mappa.ai"
+	 */
+	baseUrl?: string;
+
+	/**
+	 * Per-request timeout, in milliseconds.
+	 *
+	 * Note: this timeout applies to individual HTTP attempts (including retries).
+	 * Long-running workflows should use {@link JobsResource.wait} through
+	 * {@link ReportsResource.makeHandle} instead.
+	 *
+	 * @defaultValue 30000
+	 */
+	timeoutMs?: number;
+
+	/**
+	 * Maximum number of retries performed by the transport for retryable requests.
+	 *
+	 * @defaultValue 2
+	 */
+	maxRetries?: number;
+
+	/**
+	 * Headers that will be sent with every request.
+	 */
 	defaultHeaders?: Record<string, string>;
+
+	/**
+	 * Custom fetch implementation (useful for polyfills, instrumentation, or tests).
+	 */
 	fetch?: typeof fetch;
+
+	/**
+	 * Overrides the User-Agent header.
+	 */
 	userAgent?: string;
+
+	/**
+	 * Telemetry hooks called on request/response/error.
+	 */
 	telemetry?: Telemetry;
 };
 
+/**
+ * Main SDK client.
+ *
+ * Exposes resource namespaces ({@link Mappa.files}, {@link Mappa.reports}, etc.)
+ * and configures a shared HTTP transport.
+ */
 export class Mappa {
 	public readonly files: FilesResource;
 	public readonly jobs: JobsResource;

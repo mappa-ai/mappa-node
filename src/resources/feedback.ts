@@ -1,5 +1,3 @@
-// src/resources/feedback.ts
-
 import type { Transport } from "$/resources/transport";
 import type { FeedbackReceipt } from "$/types";
 

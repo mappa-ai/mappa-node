@@ -1,5 +1,3 @@
-// src/resources/reports.ts
-
 import type { JobsResource } from "$/resources/jobs";
 import type { Transport } from "$/resources/transport";
 import type {

@@ -1,5 +1,9 @@
-// src/types.ts
-
+/**
+ * JSON-serializable value.
+ *
+ * Used throughout the SDK for message payloads, webhook data, and server-provided
+ * metadata where the exact shape is not known at compile time.
+ */
 export type JsonValue =
 	| string
 	| number
@@ -152,11 +156,39 @@ export type MediaObject = {
 	sizeBytes?: number;
 };
 
+/**
+ * Options for long-polling job completion.
+ */
 export type WaitOptions = {
-	timeoutMs?: number; // default: 5 min
-	pollIntervalMs?: number; // default: 1000 (used as base)
-	maxPollIntervalMs?: number; // default: 10000
+	/**
+	 * Maximum time to wait before failing.
+	 *
+	 * @defaultValue 300000
+	 */
+	timeoutMs?: number;
+
+	/**
+	 * Initial polling interval.
+	 *
+	 * @defaultValue 1000
+	 */
+	pollIntervalMs?: number;
+
+	/**
+	 * Maximum polling interval used with exponential backoff.
+	 *
+	 * @defaultValue 10000
+	 */
+	maxPollIntervalMs?: number;
+
+	/**
+	 * Optional callback invoked on meaningful job state transitions.
+	 */
 	onEvent?: (event: JobEvent) => void;
+
+	/**
+	 * Abort signal used to cancel waiting.
+	 */
 	signal?: AbortSignal;
 };
 

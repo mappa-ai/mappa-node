@@ -1,5 +1,3 @@
-// src/resources/jobs.ts
-
 import type { Transport } from "$/resources/transport";
 import type { Job, JobEvent, WaitOptions } from "$/types";
 import { JobCanceledError, JobFailedError } from "../errors";
