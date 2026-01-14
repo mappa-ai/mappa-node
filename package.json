@@ -2,7 +2,7 @@
 	"name": "@mappa-ai/mappa-node",
 	"module": "src/index.ts",
 	"type": "module",
-	"version": "0.1.2",
+	"version": "1.0.0",
 	"license": "MIT",
 	"files": [
 		"dist/**"
@@ -41,6 +41,6 @@
 		"typescript": "^5.9.3"
 	},
 	"dependencies": {
-		"zod": "^4.3.5"
+		"@paralleldrive/cuid2": "^3.0.6"
 	}
 }

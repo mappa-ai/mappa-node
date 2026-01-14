@@ -1,1 +1,2 @@
-export * from "$/mappa";
+export { Mappa } from "$/Mappa";
+export type * from "$/types";
