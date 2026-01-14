@@ -3,7 +3,11 @@ import type { MediaObject } from "$/types";
 
 export type UploadRequest = {
 	file: Blob | ArrayBuffer | Uint8Array | ReadableStream<Uint8Array>;
-	contentType: string;
+	/**
+	 * Optional override.
+	 * If omitted, the SDK will try to infer it from `file.type` (Blob) and then from `filename`.
+	 */
+	contentType?: string;
 	filename?: string;
 	idempotencyKey?: string;
 	requestId?: string;
@@ -11,25 +15,44 @@ export type UploadRequest = {
 };
 
 /**
- * Best-in-class note: This is a JSON-only placeholder.
- * In production you likely want multipart/form-data or resumable multipart uploads.
+ * Best-in-class note: Uses multipart/form-data for uploads.
+ *
+ * If you need resumable uploads, add a dedicated resumable protocol.
  */
 export class FilesResource {
 	constructor(private readonly transport: Transport) {}
 
 	async upload(req: UploadRequest): Promise<MediaObject> {
-		// TODO: implement multipart/form-data or resumable protocol.
-		// Placeholder: expects server accepts base64 payload.
-		const bytesBase64 = await toBase64(req.file);
+		if (typeof FormData === "undefined") {
+			throw new Error(
+				"FormData is not available in this runtime; cannot perform multipart upload",
+			);
+		}
+
+		const derivedContentType = inferContentType(req.file, req.filename);
+		const contentType = req.contentType ?? derivedContentType;
+		if (!contentType) {
+			throw new Error(
+				"contentType is required when it cannot be inferred from file.type or filename",
+			);
+		}
+
+		const filename = req.filename ?? inferFilename(req.file) ?? "upload";
+		const filePart = await toFormDataPart(req.file, contentType);
+
+		const form = new FormData();
+		// Server expects multipart fields:
+		// - file: binary
+		// - contentType: string (may be used for validation/normalization)
+		// - filename: string (optional)
+		form.append("file", filePart, filename);
+		form.append("contentType", contentType);
+		if (req.filename) form.append("filename", req.filename);
 
 		const res = await this.transport.request<MediaObject>({
 			method: "POST",
 			path: "/v1/files",
-			body: {
-				bytesBase64,
-				contentType: req.contentType,
-				filename: req.filename,
-			},
+			body: form,
 			idempotencyKey: req.idempotencyKey,
 			requestId: req.requestId,
 			signal: req.signal,
@@ -40,47 +63,105 @@ export class FilesResource {
 	}
 }
 
-async function toBase64(file: UploadRequest["file"]): Promise<string> {
-	// Blob (browser) path
+function inferContentType(
+	file: UploadRequest["file"],
+	filename?: string,
+): string | undefined {
 	if (typeof Blob !== "undefined" && file instanceof Blob) {
-		const buf = await file.arrayBuffer();
-		return base64FromBytes(new Uint8Array(buf));
+		if (file.type) return file.type;
+	}
+	if (filename) return contentTypeFromFilename(filename);
+	return undefined;
+}
+
+function inferFilename(file: UploadRequest["file"]): string | undefined {
+	if (typeof Blob !== "undefined" && file instanceof Blob) {
+		const anyBlob = file as unknown as { name?: unknown };
+		if (typeof anyBlob.name === "string" && anyBlob.name) return anyBlob.name;
+	}
+	return undefined;
+}
+
+function contentTypeFromFilename(filename: string): string | undefined {
+	const i = filename.lastIndexOf(".");
+	if (i < 0) return undefined;
+	const ext = filename.slice(i + 1).toLowerCase();
+
+	// Small built-in map to avoid an extra dependency.
+	// Add more as needed.
+	switch (ext) {
+		case "mp4":
+			return "video/mp4";
+		case "mov":
+			return "video/quicktime";
+		case "webm":
+			return "video/webm";
+		case "mp3":
+			return "audio/mpeg";
+		case "wav":
+			return "audio/wav";
+		case "m4a":
+			return "audio/mp4";
+		case "png":
+			return "image/png";
+		case "jpg":
+		case "jpeg":
+			return "image/jpeg";
+		case "gif":
+			return "image/gif";
+		case "webp":
+			return "image/webp";
+		case "pdf":
+			return "application/pdf";
+		case "json":
+			return "application/json";
+		case "txt":
+			return "text/plain";
+		default:
+			return undefined;
+	}
+}
+
+async function toFormDataPart(
+	file: UploadRequest["file"],
+	contentType: string,
+): Promise<Blob> {
+	// Blob: ensure the part has the intended type.
+	if (typeof Blob !== "undefined" && file instanceof Blob) {
+		if (file.type === contentType) return file;
+		// TS in this repo is configured without DOM lib, so `Blob#slice` isn't typed.
+		// Most runtimes support it; we call it via an `any` cast.
+		const slicer = file as unknown as {
+			slice?: (start?: number, end?: number, contentType?: string) => Blob;
+		};
+		if (typeof slicer.slice === "function") {
+			return slicer.slice(
+				0,
+				(file as unknown as { size?: number }).size,
+				contentType,
+			);
+		}
+		return file;
 	}
 
-	// ArrayBuffer
-	if (file instanceof ArrayBuffer) return base64FromBytes(new Uint8Array(file));
-
-	// Uint8Array
-	if (file instanceof Uint8Array) return base64FromBytes(file);
+	// ArrayBuffer / Uint8Array
+	if (file instanceof ArrayBuffer)
+		return new Blob([file], { type: contentType });
+	if (file instanceof Uint8Array)
+		return new Blob([file], { type: contentType });
 
 	// ReadableStream<Uint8Array>
 	if (typeof ReadableStream !== "undefined" && file instanceof ReadableStream) {
-		const reader = file.getReader();
-		const chunks: Uint8Array[] = [];
-		while (true) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			if (value) chunks.push(value);
+		// Most runtimes (Node 18+/Bun/modern browsers) can convert stream -> Blob via Response.
+		if (typeof Response === "undefined") {
+			throw new Error(
+				"ReadableStream upload requires Response to convert stream to Blob",
+			);
 		}
-		const total = chunks.reduce((s, c) => s + c.byteLength, 0);
-		const merged = new Uint8Array(total);
-		let off = 0;
-		for (const c of chunks) {
-			merged.set(c, off);
-			off += c.byteLength;
-		}
-		return base64FromBytes(merged);
+
+		const blob = await new Response(file).blob();
+		return blob.slice(0, blob.size, contentType);
 	}
 
 	throw new Error("Unsupported file type for upload()");
-}
-
-function base64FromBytes(bytes: Uint8Array): string {
-	// Browser-safe base64
-	let binary = "";
-	const chunkSize = 0x8000;
-	for (let i = 0; i < bytes.length; i += chunkSize) {
-		binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-	}
-	return btoa(binary);
 }

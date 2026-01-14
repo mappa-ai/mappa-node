@@ -173,7 +173,6 @@ export class Transport {
 		const requestId = req.requestId ?? randomId("req");
 		const headers: Record<string, string> = {
 			Authorization: `Bearer ${this.opts.apiKey}`,
-			"Content-Type": "application/json",
 			"X-Request-Id": requestId,
 			...(this.opts.userAgent ? { "User-Agent": this.opts.userAgent } : {}),
 			...(this.opts.defaultHeaders ?? {}),
@@ -186,7 +185,18 @@ export class Transport {
 			}
 		}
 
-		const body = req.body === undefined ? undefined : JSON.stringify(req.body);
+		const isFormData =
+			typeof FormData !== "undefined" && req.body instanceof FormData;
+		const hasBody = req.body !== undefined;
+
+		if (hasBody && !isFormData) headers["Content-Type"] = "application/json";
+
+		const body =
+			req.body === undefined
+				? undefined
+				: isFormData
+					? (req.body as FormData)
+					: JSON.stringify(req.body);
 
 		const maxRetries = Math.max(0, this.opts.maxRetries);
 		const startedAt = Date.now();

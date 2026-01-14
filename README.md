@@ -119,8 +119,9 @@ To accommodate this, creating a report returns a **job receipt**. You can:
 When creating a report, `media` must be exactly one of:
 
 - `{ url: string }` (Mappa fetches the media)
-- `{ file: File }` (upload a file directly)
 - `{ mediaId: string }` (reference a previously uploaded file)
+
+If you have bytes locally and want a one-liner, use `reports.createJobFromFile()` / `reports.generateFromFile()`.
 
 ---
 

@@ -1,7 +1,9 @@
+import type { UploadRequest } from "$/resources/files";
 import type { JobsResource } from "$/resources/jobs";
 import type { Transport } from "$/resources/transport";
 import type {
 	JobEvent,
+	MediaObject,
 	MediaRef,
 	Report,
 	ReportCreateJobRequest,
@@ -20,21 +22,37 @@ function validateMedia(media: MediaRef): void {
 
 	if (!isObj(m)) throw new Error("media must be an object");
 
-	const hasUrl = m.url !== undefined;
-	const hasMediaId = m.mediaId !== undefined;
+	const hasUrl = (m as { url?: unknown }).url !== undefined;
+	const hasMediaId = (m as { mediaId?: unknown }).mediaId !== undefined;
 	if (hasUrl === hasMediaId) {
 		throw new Error("media must be exactly one of {url} or {mediaId}");
 	}
-	if (hasUrl && typeof m.url !== "string")
+	if (hasUrl && typeof (m as { url?: unknown }).url !== "string")
 		throw new Error("media.url must be a string");
-	if (hasMediaId && typeof m.mediaId !== "string")
+	if (hasMediaId && typeof (m as { mediaId?: unknown }).mediaId !== "string")
 		throw new Error("media.mediaId must be a string");
 }
+
+export type ReportCreateJobFromFileRequest = Omit<
+	ReportCreateJobRequest,
+	"media" | "idempotencyKey" | "requestId"
+> &
+	Omit<UploadRequest, "filename"> & {
+		filename?: string;
+		/**
+		 * Idempotency for the upload + job creation sequence.
+		 */
+		idempotencyKey?: string;
+		requestId?: string;
+	};
 
 export class ReportsResource {
 	constructor(
 		private readonly transport: Transport,
 		private readonly jobs: JobsResource,
+		private readonly files: {
+			upload: (req: UploadRequest) => Promise<MediaObject>;
+		},
 	) {}
 
 	async createJob(req: ReportCreateJobRequest): Promise<ReportJobReceipt> {
@@ -59,6 +77,42 @@ export class ReportsResource {
 
 		receipt.handle = this.makeHandle(receipt.jobId);
 		return receipt;
+	}
+
+	/**
+	 * Best-in-class DX: Upload a file and create a report job in one call.
+	 *
+	 * This keeps `createJob()` clean (it always accepts `media: {mediaId}|{url}`),
+	 * while providing a one-liner for the common "I have bytes" workflow.
+	 */
+	async createJobFromFile(
+		req: ReportCreateJobFromFileRequest,
+	): Promise<ReportJobReceipt> {
+		const {
+			file,
+			contentType,
+			filename,
+			idempotencyKey,
+			requestId,
+			signal,
+			...rest
+		} = req;
+
+		const upload = await this.files.upload({
+			file,
+			contentType,
+			filename,
+			idempotencyKey,
+			requestId,
+			signal,
+		});
+
+		return this.createJob({
+			...(rest as Omit<ReportCreateJobRequest, "media">),
+			media: { mediaId: upload.mediaId },
+			idempotencyKey,
+			requestId,
+		});
 	}
 
 	async get(
@@ -101,6 +155,19 @@ export class ReportsResource {
 		if (!receipt.handle) {
 			throw new Error("Job receipt is missing handle");
 		}
+		return receipt.handle.wait(opts?.wait);
+	}
+
+	/**
+	 * Best-in-class DX: createJobFromFile + wait + get.
+	 * Use for scripts; for production prefer createJobFromFile + webhooks/stream.
+	 */
+	async generateFromFile(
+		req: ReportCreateJobFromFileRequest,
+		opts?: { wait?: WaitOptions },
+	): Promise<Report> {
+		const receipt = await this.createJobFromFile(req);
+		if (!receipt.handle) throw new Error("Job receipt is missing handle");
 		return receipt.handle.wait(opts?.wait);
 	}
 

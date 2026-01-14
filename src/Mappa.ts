@@ -109,7 +109,7 @@ export class Mappa {
 
 		this.files = new FilesResource(this.transport);
 		this.jobs = new JobsResource(this.transport);
-		this.reports = new ReportsResource(this.transport, this.jobs);
+		this.reports = new ReportsResource(this.transport, this.jobs, this.files);
 		this.feedback = new FeedbackResource(this.transport);
 		this.webhooks = new WebhooksResource();
 		this.health = new HealthResource(this.transport);
