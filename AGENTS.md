@@ -72,7 +72,7 @@ Example:
 - Build:
   - `bun run build`
 - Tests:
-  - `bun test` (may report “No tests found” if none exist)
+  - `bun test` (integration tests live under `tests/` and run against a Bun-powered in-test HTTP server)
 
 ## Implementation notes (important)
 
