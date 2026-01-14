@@ -106,7 +106,9 @@ For long-running work, create a job and use `jobs.wait(...)` or `reports.makeHan
 
 ### Reports are asynchronous
 
-Creating a report returns a **job receipt**. You can:
+In the underlying architecture we do a series of transformations and
+ML inference, which can take time.
+To accommodate this, creating a report returns a **job receipt**. You can:
 
 - **Wait** (poll) until completion.
 - **Stream** job events.
@@ -117,6 +119,7 @@ Creating a report returns a **job receipt**. You can:
 When creating a report, `media` must be exactly one of:
 
 - `{ url: string }` (Mappa fetches the media)
+- `{ file: File }` (upload a file directly)
 - `{ mediaId: string }` (reference a previously uploaded file)
 
 ---
@@ -181,7 +184,8 @@ const reportByJob = await mappa.reports.getByJob(receipt.jobId);
 
 ## Uploading files
 
-If you need to upload media first, use `files.upload()` and then reference it by `mediaId`.
+If you need to upload media first, use `files.upload()` and then reference
+it by `mediaId`.
 
 ```ts
 const media = await mappa.files.upload({
@@ -198,7 +202,8 @@ const report = await mappa.reports.generate({
 
 Notes:
 
-- `files.upload()` currently uses a JSON base64 transport. It’s suitable for small files.
+- `files.upload()` currently uses a JSON base64 transport. It’s suitable
+for small files.
 - For large files, prefer a direct URL when possible.
 
 ---
@@ -299,13 +304,13 @@ Use `mappa.webhooks.verifySignature()` to verify incoming webhook events.
 
 The SDK expects a header shaped like:
 
-```
+```http
 mappa-signature: t=1700000000,v1=<hex>
 ```
 
 And verifies the HMAC-SHA256 signature of:
 
-```
+```ts
 ${t}.${rawBody}
 ```
 
