@@ -1,7 +1,7 @@
 # Mappa Node SDK [WIP - DO NOT USE YET]
 
 [![npm version](https://img.shields.io/npm/v/@mappa-ai/mappa-node.svg)](https://www.npmjs.com/package/@mappa-ai/mappa-node)
-[![license](https://img.shields.io/npm/l/@mappa-ai/mappa-node.svg)](
+![license](https://img.shields.io/npm/l/@mappa-ai/mappa-node.svg)
 
 Official JavaScript/TypeScript SDK for the **Mappa API**.
 
