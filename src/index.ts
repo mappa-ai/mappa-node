@@ -1,2 +1,3 @@
 export { Mappa } from "$/Mappa";
-export type * from "$/types";
+export * from "./errors";
+export type * from "./types";
