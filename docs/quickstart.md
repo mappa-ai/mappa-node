@@ -28,6 +28,7 @@ const mappa = new Mappa({
 const report = await mappa.reports.generateFromUrl({
   url: "https://example.com/media.mp3",
   output: { type: "markdown", template: "general_report" },
+  target: { strategy: "dominant" },
 });
 
 // Example with template params
@@ -42,6 +43,7 @@ const hiringReport = await mappa.reports.generateFromUrl({
       companyCulture: "Pragmatic, fast-moving, and customer-centric.",
     },
   },
+  target: { strategy: "magic_hint", hint: "the candidate" },
 });
 
 if (report.output.type === "markdown") {

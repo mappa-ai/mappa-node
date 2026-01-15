@@ -67,6 +67,69 @@ export type ReportOutput =
 	| ReportOutputForType<"markdown">
 	| ReportOutputForType<"json">;
 
+export type TargetStrategy =
+	| "dominant"
+	| "timerange"
+	| "entity_id"
+	| "magic_hint";
+
+export type TargetOnMiss = "fallback_dominant" | "error";
+
+export type TargetTimeRange = {
+	/**
+	 * Start time in seconds.
+	 * When omitted, starts from the beginning.
+	 */
+	startSeconds?: number;
+	/**
+	 * End time in seconds.
+	 * When omitted, goes until the end.
+	 */
+	endSeconds?: number;
+};
+
+type TargetBase = {
+	/**
+	 * Behavior when the entity is not found.
+	 */
+	onMiss?: TargetOnMiss;
+};
+
+export type TargetDominant = TargetBase & {
+	strategy: "dominant";
+};
+
+export type TargetTimeRangeStrategy = TargetBase & {
+	strategy: "timerange";
+	timeRange: TargetTimeRange;
+};
+
+export type TargetEntityId = TargetBase & {
+	strategy: "entity_id";
+	entityId: string;
+};
+
+export type TargetMagicHint = TargetBase & {
+	strategy: "magic_hint";
+	hint: string;
+};
+
+export type TargetSelector =
+	| TargetDominant
+	| TargetTimeRangeStrategy
+	| TargetEntityId
+	| TargetMagicHint;
+
+export type TargetStrategyMap = {
+	dominant: TargetDominant;
+	timerange: TargetTimeRangeStrategy;
+	entity_id: TargetEntityId;
+	magic_hint: TargetMagicHint;
+};
+
+export type TargetFor<Strategy extends TargetStrategy> =
+	TargetStrategyMap[Strategy];
+
 export type Usage = {
 	creditsUsed: number;
 	creditsDiscounted?: number;
@@ -132,6 +195,12 @@ export type ReportCreateJobRequest = {
 	 */
 	media: MediaIdRef;
 	output: ReportOutput;
+	/**
+	 * Select the target entity for analysis.
+	 *
+	 * When omitted, the API defaults to the dominant speaker.
+	 */
+	target?: TargetSelector;
 	options?: {
 		language?: string;
 		timezone?: string;

@@ -8,6 +8,7 @@ A handful of copy/paste helpers for real-world workflows.
 const receipt = await mappa.reports.createJobFromUrl({
   url: "https://example.com/media.mp3",
   output: { type: "markdown", template: "general_report" },
+  target: { strategy: "dominant" },
 });
 
 const report = await receipt.handle!.wait();
@@ -65,6 +66,7 @@ switch (event.type) {
 const report = await mappa.reports.generateFromFile({
   file: new File([bytes], "audio.mp3"),
   output: { type: "markdown", template: "general_report" },
+  target: { strategy: "entity_id", entityId: "ent_123" },
 });
 ```
 
@@ -74,6 +76,10 @@ const report = await mappa.reports.generateFromFile({
 const report = await mappa.reports.generateFromUrl({
   url: "https://example.com/media.mp3",
   output: { type: "json", template: "general_report" },
+  target: {
+    strategy: "timerange",
+    timeRange: { startSeconds: 60 },
+  },
 });
 
 if (report.output.type === "json") {

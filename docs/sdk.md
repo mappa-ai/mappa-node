@@ -18,6 +18,7 @@ const mappa = new Mappa({
 const receipt = await mappa.reports.createJob({
   media: { mediaId: "media_..." },
   output: { type: "markdown", template: "general_report" },
+  target: { strategy: "dominant" },
   options: { language: "en", timezone: "UTC" },
   idempotencyKey: "report:customer_123:2026-01-14",
 });
@@ -25,7 +26,8 @@ const receipt = await mappa.reports.createJob({
 
 ## Template-driven outputs
 
-Pick a template and supply its parameters (if required).
+Pick a template and supply its parameters (if required). You can also
+choose a target speaker when multiple entities are present.
 
 ```ts
 const report = await mappa.reports.generateFromUrl({
@@ -38,6 +40,11 @@ const report = await mappa.reports.generateFromUrl({
       roleDescription: "Own onboarding and renewal conversations.",
       companyCulture: "Curious, candid, customer-obsessed.",
     },
+  },
+  target: {
+    strategy: "timerange",
+    timeRange: { startSeconds: 120, endSeconds: 900 },
+    onMiss: "fallback_dominant",
   },
 });
 ```

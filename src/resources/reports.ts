@@ -150,7 +150,7 @@ export class ReportsResource {
 		const res = await this.transport.request<Omit<ReportJobReceipt, "handle">>({
 			method: "POST",
 			path: "/v1/reports/jobs",
-			body: req,
+			body: this.normalizeJobRequest(req),
 			idempotencyKey,
 			requestId: req.requestId,
 			retryable: true,
@@ -371,5 +371,62 @@ export class ReportsResource {
 	private defaultIdempotencyKey(_req: ReportCreateJobRequest): string {
 		// Deterministic keys can be added later; random avoids accidental duplicates on retries.
 		return randomId("idem");
+	}
+
+	private normalizeJobRequest(
+		req: ReportCreateJobRequest,
+	): Record<string, unknown> {
+		const target = req.target;
+		if (!target) {
+			return req;
+		}
+
+		const baseTarget: Record<string, unknown> = {
+			strategy: target.strategy,
+		};
+
+		if (target.onMiss) {
+			baseTarget.on_miss = target.onMiss;
+		}
+
+		switch (target.strategy) {
+			case "dominant": {
+				return { ...req, target: baseTarget };
+			}
+			case "timerange": {
+				const timeRange = target.timeRange ?? {};
+				return {
+					...req,
+					target: {
+						...baseTarget,
+						timerange: {
+							start_seconds: timeRange.startSeconds ?? null,
+							end_seconds: timeRange.endSeconds ?? null,
+						},
+					},
+				};
+			}
+			case "entity_id": {
+				return {
+					...req,
+					target: {
+						...baseTarget,
+						entity_id: target.entityId,
+					},
+				};
+			}
+			case "magic_hint": {
+				return {
+					...req,
+					target: {
+						...baseTarget,
+						hint: target.hint,
+					},
+				};
+			}
+			default: {
+				return req;
+			}
+		}
 	}
 }
