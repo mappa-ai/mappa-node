@@ -7,7 +7,7 @@ A handful of copy/paste helpers for real-world workflows.
 ```ts
 const receipt = await mappa.reports.createJobFromUrl({
   url: "https://example.com/media.mp3",
-  output: { type: "markdown" },
+  output: { type: "markdown", template: "general_report" },
 });
 
 const report = await receipt.handle!.wait();
@@ -64,8 +64,23 @@ switch (event.type) {
 ```ts
 const report = await mappa.reports.generateFromFile({
   file: new File([bytes], "audio.mp3"),
-  output: { type: "markdown" },
+  output: { type: "markdown", template: "general_report" },
 });
+```
+
+## JSON output sections
+
+```ts
+const report = await mappa.reports.generateFromUrl({
+  url: "https://example.com/media.mp3",
+  output: { type: "json", template: "general_report" },
+});
+
+if (report.output.type === "json") {
+  for (const section of report.sections) {
+    console.log(section.section_title, section.section_content);
+  }
+}
 ```
 
 ## Handle timeouts gracefully

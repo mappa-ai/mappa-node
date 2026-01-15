@@ -27,7 +27,21 @@ const mappa = new Mappa({
 
 const report = await mappa.reports.generateFromUrl({
   url: "https://example.com/media.mp3",
-  output: { type: "markdown" },
+  output: { type: "markdown", template: "general_report" },
+});
+
+// Example with template params
+const hiringReport = await mappa.reports.generateFromUrl({
+  url: "https://example.com/interview.mp3",
+  output: {
+    type: "markdown",
+    template: "hiring_report",
+    templateParams: {
+      roleTitle: "Solutions Engineer",
+      roleDescription: "Technical discovery and customer enablement.",
+      companyCulture: "Pragmatic, fast-moving, and customer-centric.",
+    },
+  },
 });
 
 if (report.output.type === "markdown") {
@@ -38,5 +52,7 @@ if (report.output.type === "markdown") {
 ## 4) Your first win ✅
 
 If you see Markdown output, you’ve got liftoff. From here, you can switch to job-based workflows for production, stream progress, or set up webhooks.
+
+If you want structured JSON output for UIs, use `type: "json"` and read `report.sections`.
 
 Next: [Core concepts](concepts.md).

@@ -385,7 +385,10 @@ export class TestApiServer {
 			media: jobId
 				? { mediaId: this.lastUploadedMediaId }
 				: { url: "https://example.com" },
-			output: { type: "markdown" },
+			output: {
+				type: "markdown",
+				template: "general_report",
+			},
 			markdown: "# Test Report\n\nHello from integration tests.",
 			...(jobId ? { jobId } : {}),
 		};

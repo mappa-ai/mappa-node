@@ -12,9 +12,21 @@ If you can make HTTP requests, you can integrate Mappa.
 ## What you can do
 
 - **Generate reports** from remote URLs or uploaded media.
+- **Pick a template** that matches your task.
 - **Track long-running jobs** with polling or streaming.
 - **Use webhooks** to get notified when work is done.
 - **Send feedback** to improve results.
+
+## Templates at a glance
+
+- `sales_playbook` — optimized for conversion and persuasion.
+- `general_report` — balanced, all-purpose behavioral report.
+- `hiring_report` — aligned to a role and company culture.
+- `profile_alignment` — compares speaker to an ideal profile.
+
+Required template params:
+- `hiring_report`: `roleTitle`, `roleDescription`, `companyCulture`
+- `profile_alignment`: `idealProfile`
 
 ## Choose your path
 

@@ -20,13 +20,23 @@ Mappa accepts media in a few friendly ways:
 
 Reports are typed and depend on `report.output.type`. Common types include:
 - `markdown` — ready-to-render summaries.
-- `sections` — structured blocks for UI.
+- `json` — structured sections for UI.
+
+Each report is generated with a **template** so Mappa knows which behavioral lens to apply.
 
 Use TypeScript to narrow results safely:
 
 ```ts
 if (report.output.type === "markdown") {
   console.log(report.markdown);
+}
+```
+
+```ts
+if (report.output.type === "json") {
+  for (const section of report.sections) {
+    console.log(section.section_title, section.section_content);
+  }
 }
 ```
 

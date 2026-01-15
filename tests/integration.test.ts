@@ -175,7 +175,7 @@ describe("SDK integration", () => {
 				file: new Uint8Array([9, 9, 9]),
 				contentType: "audio/wav",
 				filename: "audio.wav",
-				output: { type: "markdown" },
+				output: { type: "markdown", template: "general_report" },
 			},
 			{
 				wait: {
@@ -216,7 +216,7 @@ describe("SDK integration", () => {
 				url: `${api.baseUrl}/fixtures/sample.wav`,
 				contentType: "audio/wav",
 				filename: "sample.wav",
-				output: { type: "markdown" },
+				output: { type: "markdown", template: "general_report" },
 			},
 			{
 				wait: {
@@ -256,7 +256,7 @@ describe("SDK integration", () => {
 			url: `${api.baseUrl}/fixtures/sample.wav`,
 			contentType: "audio/wav",
 			filename: "sample.wav",
-			output: { type: "markdown" },
+			output: { type: "markdown", template: "general_report" },
 		});
 
 		expect(receipt.jobId).toMatch(/^job_/);
@@ -276,7 +276,7 @@ describe("SDK integration", () => {
 			await client.reports.createJob({
 				// Force a runtime validation error: createJob only accepts { mediaId }.
 				media: { url: "https://example.com/file.wav" } as unknown as MediaIdRef,
-				output: { type: "markdown" },
+				output: { type: "markdown", template: "general_report" },
 			});
 		} catch (err) {
 			thrown = err;
@@ -292,7 +292,7 @@ describe("SDK integration", () => {
 		try {
 			await client.reports.createJob({
 				media: { mediaId: "media_does_not_exist" },
-				output: { type: "markdown" },
+				output: { type: "markdown", template: "general_report" },
 			});
 		} catch (err) {
 			thrown = err;

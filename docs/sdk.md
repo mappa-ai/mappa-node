@@ -17,13 +17,46 @@ const mappa = new Mappa({
 ```ts
 const receipt = await mappa.reports.createJob({
   media: { mediaId: "media_..." },
-  output: { type: "markdown" },
+  output: { type: "markdown", template: "general_report" },
   options: { language: "en", timezone: "UTC" },
   idempotencyKey: "report:customer_123:2026-01-14",
 });
-
-console.log(receipt.jobId);
 ```
+
+## Template-driven outputs
+
+Pick a template and supply its parameters (if required).
+
+```ts
+const report = await mappa.reports.generateFromUrl({
+  url: "https://example.com/media.mp3",
+  output: {
+    type: "markdown",
+    template: "hiring_report",
+    templateParams: {
+      roleTitle: "Customer Success Manager",
+      roleDescription: "Own onboarding and renewal conversations.",
+      companyCulture: "Curious, candid, customer-obsessed.",
+    },
+  },
+});
+```
+
+For profile alignment:
+
+```ts
+const report = await mappa.reports.generateFromUrl({
+  url: "https://example.com/media.mp3",
+  output: {
+    type: "json",
+    template: "profile_alignment",
+    templateParams: {
+      idealProfile: "High empathy, structured thinking, clear communication.",
+    },
+  },
+});
+```
+
 
 ## Wait for completion
 
@@ -86,4 +119,4 @@ await mappa.feedback.create({
 ## TypeScript tips
 
 The SDK exports helpful types such as `Report`, `ReportOutput`, and `WaitOptions`.
-Use `report.output.type` to narrow outputs safely.
+Use `report.output.type` and `report.output.template` to narrow outputs safely.

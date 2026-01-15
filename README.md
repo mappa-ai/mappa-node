@@ -37,11 +37,12 @@ const mappa = new Mappa({
   apiKey: process.env.MAPPA_API_KEY!,
 });
 
-// One-liner for remote URLs: download -> upload -> create job -> wait -> fetch report
-const report = await mappa.reports.generateFromUrl({
-  url: "https://example.com/media.mp3",
-  output: { type: "markdown" },
-});
+  // One-liner for remote URLs: download -> upload -> create job -> wait -> fetch report
+  const report = await mappa.reports.generateFromUrl({
+    url: "https://example.com/media.mp3",
+    output: { type: "markdown", template: "general_report" },
+  });
+
 
 if (report.output.type === "markdown") {
   console.log(report.markdown);
@@ -106,7 +107,7 @@ Example:
 ```ts
 await mappa.reports.createJob({
   media: { mediaId: "media_..." },
-  output: { type: "markdown" },
+  output: { type: "markdown", template: "general_report" },
   idempotencyKey: "report:customer_123:2026-01-14",
   requestId: "req_customer_123",
 });
@@ -206,7 +207,7 @@ If you already have an uploaded `mediaId`, use `createJob()`:
 ```ts
 const receipt = await mappa.reports.createJob({
   media: { mediaId: "media_..." },
-  output: { type: "markdown" },
+  output: { type: "markdown", template: "general_report" },
   subject: {
     externalRef: "customer_123",
     metadata: { plan: "pro" },
@@ -227,7 +228,7 @@ If you’re starting from a remote URL, use `createJobFromUrl()`:
 ```ts
 const receiptFromUrl = await mappa.reports.createJobFromUrl({
   url: "https://example.com/media.mp3",
-  output: { type: "markdown" },
+  output: { type: "markdown", template: "general_report" },
   subject: {
     externalRef: "customer_123",
     metadata: { plan: "pro" },
@@ -260,9 +261,9 @@ const report = await receipt.handle!.wait({
 `jobs.stream(jobId)` yields state transitions.
 
 ```ts
-if (report.output.type === "sections") {
+if (report.output.type === "json") {
   for (const section of report.sections) {
-    console.log(section.id, section.title);
+    console.log(section.section_title, section.section_content);
   }
 }
 ```
@@ -317,7 +318,20 @@ import {
 try {
   await mappa.reports.generateFromUrl({
     url: "https://example.com/media.mp3",
-    output: { type: "markdown" },
+    output: { type: "markdown", template: "general_report" },
+  });
+
+  await mappa.reports.generateFromUrl({
+    url: "https://example.com/interview.mp3",
+    output: {
+      type: "markdown",
+      template: "hiring_report",
+      templateParams: {
+        roleTitle: "Customer Success Manager",
+        roleDescription: "Own onboarding and renewal conversations.",
+        companyCulture: "Curious, candid, customer-obsessed.",
+      },
+    },
   });
 } catch (err) {
   if (err instanceof AuthError) {

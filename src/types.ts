@@ -21,17 +21,51 @@ export type MediaRef =
  */
 export type MediaIdRef = { mediaId: string };
 
-export type ReportSectionSelection = {
-	id: string;
-	enabled?: boolean;
-	order?: number;
-	params?: Record<string, JsonValue>;
-	titleOverride?: string;
+export type ReportTemplateId =
+	| "sales_playbook"
+	| "general_report"
+	| "hiring_report"
+	| "profile_alignment";
+
+export type ReportTemplateParamsMap = {
+	sales_playbook: Record<string, never>;
+	general_report: Record<string, never>;
+	hiring_report: {
+		roleTitle: string;
+		roleDescription: string;
+		companyCulture: string;
+	};
+	profile_alignment: {
+		idealProfile: string;
+	};
 };
 
+export type ReportOutputType = "markdown" | "json";
+
+type ReportOutputEntry<
+	OutputType extends ReportOutputType,
+	Template extends ReportTemplateId,
+> = ReportTemplateParamsMap[Template] extends Record<string, never>
+	? {
+			type: OutputType;
+			template: Template;
+			templateParams?: ReportTemplateParamsMap[Template];
+		}
+	: {
+			type: OutputType;
+			template: Template;
+			templateParams: ReportTemplateParamsMap[Template];
+		};
+
+type ReportOutputForType<OutputType extends ReportOutputType> =
+	| ReportOutputEntry<OutputType, "sales_playbook">
+	| ReportOutputEntry<OutputType, "general_report">
+	| ReportOutputEntry<OutputType, "hiring_report">
+	| ReportOutputEntry<OutputType, "profile_alignment">;
+
 export type ReportOutput =
-	| { type: "markdown"; sections?: ReportSectionSelection[] }
-	| { type: "sections"; sections?: ReportSectionSelection[] };
+	| ReportOutputForType<"markdown">
+	| ReportOutputForType<"json">;
 
 export type Usage = {
 	creditsUsed: number;
@@ -123,17 +157,15 @@ export type MarkdownReport = ReportBase & {
 	markdown: string;
 };
 
-export type SectionsReport = ReportBase & {
-	output: { type: "sections" };
+export type JsonReport = ReportBase & {
+	output: { type: "json" };
 	sections: Array<{
-		id: string;
-		title: string;
-		content: JsonValue;
-		data?: JsonValue;
+		section_title: string;
+		section_content: JsonValue;
 	}>;
 };
 
-export type Report = MarkdownReport | SectionsReport;
+export type Report = MarkdownReport | JsonReport;
 
 export type ReportJobReceipt = {
 	jobId: string;

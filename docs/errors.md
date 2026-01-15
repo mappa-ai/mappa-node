@@ -26,7 +26,21 @@ import {
 try {
   await mappa.reports.generateFromUrl({
     url: "https://example.com/media.mp3",
-    output: { type: "markdown" },
+    output: { type: "markdown", template: "general_report" },
+  });
+
+  // Example with required template params
+  await mappa.reports.generateFromUrl({
+    url: "https://example.com/interview.mp3",
+    output: {
+      type: "markdown",
+      template: "hiring_report",
+      templateParams: {
+        roleTitle: "Customer Success Manager",
+        roleDescription: "Own onboarding and renewal conversations.",
+        companyCulture: "Curious, candid, customer-obsessed.",
+      },
+    },
   });
 } catch (err) {
   if (err instanceof AuthError) {
