@@ -9,3 +9,12 @@
 export * from "$/errors";
 export { Mappa } from "$/Mappa";
 export type * from "$/types";
+
+import { MappaError } from "$/errors";
+
+/**
+ * Type guard for catching SDK errors.
+ */
+export function isMappaError(err: unknown): err is MappaError {
+	return err instanceof MappaError;
+}

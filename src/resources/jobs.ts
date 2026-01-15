@@ -1,7 +1,7 @@
 import type { Transport } from "$/resources/transport";
 import type { Job, JobEvent, WaitOptions } from "$/types";
 import { JobCanceledError, JobFailedError } from "../errors";
-import { backoffMs, jitter, nowMs } from "../utils";
+import { backoffMs, jitter, makeAbortError, nowMs } from "../utils";
 
 export class JobsResource {
 	constructor(private readonly transport: Transport) {}
@@ -50,7 +50,7 @@ export class JobsResource {
 		let lastStatus: string | undefined;
 
 		while (true) {
-			if (opts?.signal?.aborted) throw new Error("Aborted");
+			if (opts?.signal?.aborted) throw makeAbortError();
 
 			const job = await this.get(jobId, { signal: opts?.signal });
 

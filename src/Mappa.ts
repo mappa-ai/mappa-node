@@ -1,3 +1,4 @@
+import { MappaError } from "$/errors";
 import { FeedbackResource } from "$/resources/feedback";
 import { FilesResource } from "$/resources/files";
 import { HealthResource } from "$/resources/health";
@@ -82,7 +83,9 @@ export class Mappa {
 		Omit<MappaClientOptions, "apiKey" | "baseUrl" | "timeoutMs" | "maxRetries">;
 
 	constructor(options: MappaClientOptions) {
-		if (!options.apiKey) throw new Error("apiKey is required");
+		if (!options.apiKey) {
+			throw new MappaError("apiKey is required");
+		}
 
 		const baseUrl = options.baseUrl ?? "https://api.mappa.ai";
 		const timeoutMs = options.timeoutMs ?? 30_000;
@@ -109,7 +112,12 @@ export class Mappa {
 
 		this.files = new FilesResource(this.transport);
 		this.jobs = new JobsResource(this.transport);
-		this.reports = new ReportsResource(this.transport, this.jobs, this.files);
+		this.reports = new ReportsResource(
+			this.transport,
+			this.jobs,
+			this.files,
+			this.opts.fetch ?? fetch,
+		);
 		this.feedback = new FeedbackResource(this.transport);
 		this.webhooks = new WebhooksResource();
 		this.health = new HealthResource(this.transport);

@@ -204,6 +204,47 @@ describe("SDK integration", () => {
 		expect(paths.some((p) => p.startsWith("/v1/reports/"))).toBe(true);
 	});
 
+	test("reports.generateFromUrl downloads, uploads, waits and returns report", async () => {
+		const client = new Mappa({
+			apiKey: "test-api-key",
+			baseUrl: api.baseUrl,
+			maxRetries: 0,
+		});
+
+		const report = await client.reports.generateFromUrl(
+			{
+				url: `${api.baseUrl}/fixtures/sample.wav`,
+				contentType: "audio/wav",
+				filename: "sample.wav",
+				output: { type: "markdown" },
+			},
+			{
+				wait: {
+					pollIntervalMs: 10,
+					maxPollIntervalMs: 20,
+					timeoutMs: 2_000,
+				},
+			},
+		);
+
+		expect(report.output.type).toBe("markdown");
+		if (report.output.type === "markdown") {
+			const markdownReport = report as Extract<
+				typeof report,
+				{ output: { type: "markdown" } }
+			>;
+			expect(markdownReport.markdown).toContain("Test Report");
+		}
+
+		const paths = api.requests.map((r) => r.path);
+		// download endpoint is part of the test server and is called via fetch()
+		expect(paths).toContain("/fixtures/sample.wav");
+		expect(paths).toContain("/v1/files");
+		expect(paths).toContain("/v1/reports/jobs");
+		expect(paths.some((p) => p.startsWith("/v1/jobs/"))).toBe(true);
+		expect(paths.some((p) => p.startsWith("/v1/reports/"))).toBe(true);
+	});
+
 	test("reports.createJobFromUrl downloads, uploads then creates a job", async () => {
 		const client = new Mappa({
 			apiKey: "test-api-key",

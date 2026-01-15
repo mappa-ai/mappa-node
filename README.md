@@ -37,8 +37,9 @@ const mappa = new Mappa({
   apiKey: process.env.MAPPA_API_KEY!,
 });
 
-const report = await mappa.reports.generate({
-  media: { url: "https://example.com/media.mp3" },
+// One-liner for remote URLs: download -> upload -> create job -> wait -> fetch report
+const report = await mappa.reports.generateFromUrl({
+  url: "https://example.com/media.mp3",
   output: { type: "markdown" },
 });
 
@@ -116,12 +117,14 @@ To accommodate this, creating a report returns a **job receipt**. You can:
 
 ### Media input
 
-When creating a report, `media` must be exactly one of:
+Report job creation accepts **already-uploaded** media references:
 
-- `{ url: string }` (Mappa fetches the media)
-- `{ mediaId: string }` (reference a previously uploaded file)
+- `{ mediaId: string }`
 
-If you have bytes locally and want a one-liner, use `reports.createJobFromFile()` / `reports.generateFromFile()`.
+If you want a one-liner starting from something else:
+
+- Remote URLs: `reports.createJobFromUrl()` / `reports.generateFromUrl()` (download client-side → upload → create job)
+- Local bytes: `reports.createJobFromFile()` / `reports.generateFromFile()` (upload → create job)
 
 ---
 
@@ -129,9 +132,11 @@ If you have bytes locally and want a one-liner, use `reports.createJobFromFile()
 
 ### 1) Create a job (recommended for production)
 
+If you already have an uploaded `mediaId`, use `createJob()`:
+
 ```ts
 const receipt = await mappa.reports.createJob({
-  media: { url: "https://example.com/media.mp3" },
+  media: { mediaId: "media_..." },
   output: { type: "markdown" },
   subject: {
     externalRef: "customer_123",
@@ -146,6 +151,26 @@ const receipt = await mappa.reports.createJob({
 });
 
 console.log(receipt.jobId);
+```
+
+If you’re starting from a remote URL, use `createJobFromUrl()`:
+
+```ts
+const receiptFromUrl = await mappa.reports.createJobFromUrl({
+  url: "https://example.com/media.mp3",
+  output: { type: "markdown" },
+  subject: {
+    externalRef: "customer_123",
+    metadata: { plan: "pro" },
+  },
+  options: {
+    language: "en",
+    timezone: "UTC",
+  },
+  idempotencyKey: "report:customer_123:2026-01-14",
+});
+
+console.log(receiptFromUrl.jobId);
 ```
 
 ### 2) Wait for completion (polling)
@@ -203,9 +228,9 @@ const report = await mappa.reports.generate({
 
 Notes:
 
-- `files.upload()` currently uses a JSON base64 transport. It’s suitable
-for small files.
-- For large files, prefer a direct URL when possible.
+- `files.upload()` uses `multipart/form-data`.
+- Uploads are marked retryable; be mindful when passing one-shot streams.
+- For very large files, prefer `createJobFromUrl()` / `generateFromUrl()` when possible.
 
 ---
 
@@ -216,8 +241,8 @@ for small files.
 ### Markdown
 
 ```ts
-const report = await mappa.reports.generate({
-  media: { url: "https://example.com/media.mp3" },
+const report = await mappa.reports.generateFromUrl({
+  url: "https://example.com/media.mp3",
   output: { type: "markdown" },
 });
 
@@ -229,8 +254,8 @@ if (report.output.type === "markdown") {
 ### Sections
 
 ```ts
-const report = await mappa.reports.generate({
-  media: { url: "https://example.com/media.mp3" },
+const report = await mappa.reports.generateFromUrl({
+  url: "https://example.com/media.mp3",
   output: {
     type: "sections",
     sections: [

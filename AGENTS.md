@@ -111,4 +111,15 @@ This SDK targets modern runtimes (Node 18+/Bun/modern browsers).
 - Updated the in-test server fixtures and behavior to match the new server contract.
 - Verified via `bun run check`, `bun run typecheck`, and `bun test`.
 
+
+## Agent log (2026-01-14, DX pass)
+
+- Updated README examples to match the current API: `createJob/generate` require `media: { mediaId }`, and URL/file one-liners use `generateFromUrl` / `generateFromFile`.
+- Added `reports.generateFromUrl()` helper (download -> upload -> create job -> wait -> fetch report).
+- Standardized abort semantics in polling (`jobs.wait`) to throw an `AbortError` (via `makeAbortError()`).
+- Ensured URL-download helpers respect the client’s configured `fetch` implementation.
+- Added `isMappaError()` type guard to the public entrypoint.
+- Extended integration tests to cover `generateFromUrl`.
+- Verified via `bun run check`, `bun run typecheck`, and `bun test`.
+
 - No accidental breaking changes (types and runtime behavior).

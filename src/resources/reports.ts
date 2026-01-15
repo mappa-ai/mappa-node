@@ -124,6 +124,7 @@ export class ReportsResource {
 		private readonly files: {
 			upload: (req: UploadRequest) => Promise<MediaObject>;
 		},
+		private readonly fetchImpl: typeof fetch,
 	) {}
 
 	/**
@@ -238,7 +239,7 @@ export class ReportsResource {
 			throw new Error("url must use http: or https:");
 		}
 
-		const res = await fetch(parsed.toString(), { signal });
+		const res = await this.fetchImpl(parsed.toString(), { signal });
 		if (!res.ok) {
 			throw new Error(`Failed to download url (status ${res.status})`);
 		}
@@ -327,6 +328,19 @@ export class ReportsResource {
 		opts?: { wait?: WaitOptions },
 	): Promise<Report> {
 		const receipt = await this.createJobFromFile(req);
+		if (!receipt.handle) throw new Error("Job receipt is missing handle");
+		return receipt.handle.wait(opts?.wait);
+	}
+
+	/**
+	 * Best-in-class DX: createJobFromUrl + wait + get.
+	 * Use for scripts; for production prefer createJobFromUrl + webhooks/stream.
+	 */
+	async generateFromUrl(
+		req: ReportCreateJobFromUrlRequest,
+		opts?: { wait?: WaitOptions },
+	): Promise<Report> {
+		const receipt = await this.createJobFromUrl(req);
 		if (!receipt.handle) throw new Error("Job receipt is missing handle");
 		return receipt.handle.wait(opts?.wait);
 	}
