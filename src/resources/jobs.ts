@@ -111,7 +111,7 @@ export class JobsResource {
 	/**
 	 * Public stream API.
 	 * If you add SSE later, keep this signature and switch implementation internally.
-	 * For now, it yields events based on polling.
+	 * For now, it yields events based on polling. Use `AbortSignal` to cancel streaming.
 	 */
 	async *stream(
 		jobId: string,

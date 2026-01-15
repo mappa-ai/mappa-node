@@ -17,6 +17,9 @@ export type FeedbackCreateRequest = {
 export class FeedbackResource {
 	constructor(private readonly transport: Transport) {}
 
+	/**
+	 * Create feedback for a report or job. Provide exactly one of `reportId` or `jobId`.
+	 */
 	async create(req: FeedbackCreateRequest): Promise<FeedbackReceipt> {
 		if (!!req.reportId === !!req.jobId)
 			throw new MappaError("Provide exactly one of reportId or jobId");

@@ -132,6 +132,6 @@ export class Mappa {
 	}
 
 	close(): void {
-		// If you later add keep-alive agents or SSE connections, close them here.
+		// No-op today; reserved for future transport cleanup (keep-alive, SSE, etc.).
 	}
 }

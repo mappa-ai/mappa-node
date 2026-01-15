@@ -112,6 +112,12 @@ await mappa.reports.createJob({
 });
 ```
 
+### Retries
+
+Retries are enabled for retryable requests (GETs and idempotent writes). Use
+`maxRetries: 0` to disable retries globally, or pass your own `idempotencyKey`
+to make POST retries safe.
+
 Create a derived client with overrides:
 
 ```ts
@@ -147,6 +153,20 @@ try {
   if (err instanceof Error && err.name === "AbortError") {
     console.log("wait canceled");
   }
+}
+```
+
+Streaming with cancellation:
+
+```ts
+const controller = new AbortController();
+
+const handle = mappa.reports.makeHandle("job_...");
+
+setTimeout(() => controller.abort(), 5_000);
+
+for await (const event of handle.stream({ signal: controller.signal })) {
+  if (event.type === "terminal") break;
 }
 ```
 
@@ -257,6 +277,22 @@ if (report.output.type === "markdown") {
 
 ---
 
+## Feedback
+
+Use `mappa.feedback.create()` to share ratings or corrections. Provide exactly
+one of `reportId` or `jobId`.
+
+```ts
+await mappa.feedback.create({
+  reportId: "report_...",
+  rating: "thumbs_up",
+  tags: ["quality"],
+  comment: "Accurate summary",
+});
+```
+
+---
+
 ## Errors
 
 
@@ -323,6 +359,7 @@ Tips for raw body handling:
 - Express: `express.text({ type: "*/*" })`
 - Fastify: use `rawBody` (enable `bodyLimit` and `rawBody`)
 - Next.js (App Router): read `await req.text()` before parsing
+- Node 18+ or modern runtimes are required for WebCrypto
 
 The SDK expects a header shaped like:
 
@@ -355,6 +392,7 @@ app.post(
       payload: req.body,
       headers: req.headers as Record<string, string | string[] | undefined>,
       secret: process.env.MAPPA_WEBHOOK_SECRET!,
+      toleranceSec: 300,
     });
 
     const event = mappa.webhooks.parseEvent(req.body);
@@ -402,7 +440,8 @@ const mappa = new Mappa({
 
 ## TypeScript
 
-Everything is typed. Common types are exported:
+Everything is typed. Common types are exported and `Report` is a discriminated
+union on `report.output.type`.
 
 ```ts
 import type {
