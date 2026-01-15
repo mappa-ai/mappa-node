@@ -90,6 +90,28 @@ const mappa = new Mappa({
 });
 ```
 
+### Request tracing
+
+The SDK sets `X-Request-Id` on every request. You can supply your own `requestId`
+per call to correlate logs across your system and Mappa support.
+
+### Idempotency
+
+Most write APIs accept `idempotencyKey`. If you do not provide one, the SDK
+generates a best-effort key per request. For long-running workflows, it is best
+practice to supply a stable key per logical operation.
+
+Example:
+
+```ts
+await mappa.reports.createJob({
+  media: { mediaId: "media_..." },
+  output: { type: "markdown" },
+  idempotencyKey: "report:customer_123:2026-01-14",
+  requestId: "req_customer_123",
+});
+```
+
 Create a derived client with overrides:
 
 ```ts
@@ -100,6 +122,33 @@ const mappaNoRetries = mappa.withOptions({ maxRetries: 0 });
 
 `timeoutMs` is a **per-request** timeout (including each retry attempt).
 For long-running work, create a job and use `jobs.wait(...)` or `reports.makeHandle(jobId)`.
+
+### Cancelling waits
+
+Use `AbortController` to cancel polling or streaming when your app shuts down
+or the user navigates away.
+
+```ts
+const controller = new AbortController();
+
+setTimeout(() => controller.abort(), 10_000);
+
+const receipt = await mappa.reports.createJob({
+  media: { mediaId: "media_..." },
+  output: { type: "markdown" },
+});
+
+try {
+  const report = await receipt.handle!.wait({
+    signal: controller.signal,
+  });
+  console.log(report.id);
+} catch (err) {
+  if (err instanceof Error && err.name === "AbortError") {
+    console.log("wait canceled");
+  }
+}
+```
 
 ---
 
@@ -191,80 +240,6 @@ const report = await receipt.handle!.wait({
 `jobs.stream(jobId)` yields state transitions.
 
 ```ts
-for await (const e of receipt.handle!.stream()) {
-  if (e.type === "status") console.log("status", e.job.status);
-  if (e.type === "stage") console.log("stage", e.stage, e.progress);
-  if (e.type === "terminal") console.log("done", e.job.status);
-}
-```
-
-### 4) Fetch a report later
-
-```ts
-const reportById = await mappa.reports.get("report_id");
-
-const reportByJob = await mappa.reports.getByJob(receipt.jobId);
-```
-
----
-
-## Uploading files
-
-If you need to upload media first, use `files.upload()` and then reference
-it by `mediaId`.
-
-```ts
-const media = await mappa.files.upload({
-  file: new Uint8Array([/* ... */]),
-  contentType: "audio/wav",
-  filename: "sample.wav",
-});
-
-const report = await mappa.reports.generate({
-  media: { mediaId: media.mediaId },
-  output: { type: "markdown" },
-});
-```
-
-Notes:
-
-- `files.upload()` uses `multipart/form-data`.
-- Uploads are marked retryable; be mindful when passing one-shot streams.
-- For very large files, prefer `createJobFromUrl()` / `generateFromUrl()` when possible.
-
----
-
-## Report outputs
-
-`output` controls the format:
-
-### Markdown
-
-```ts
-const report = await mappa.reports.generateFromUrl({
-  url: "https://example.com/media.mp3",
-  output: { type: "markdown" },
-});
-
-if (report.output.type === "markdown") {
-  console.log(report.markdown);
-}
-```
-
-### Sections
-
-```ts
-const report = await mappa.reports.generateFromUrl({
-  url: "https://example.com/media.mp3",
-  output: {
-    type: "sections",
-    sections: [
-      { id: "summary" },
-      { id: "insights", params: { detail: "high" } },
-    ],
-  },
-});
-
 if (report.output.type === "sections") {
   for (const section of report.sections) {
     console.log(section.id, section.title);
@@ -272,9 +247,18 @@ if (report.output.type === "sections") {
 }
 ```
 
+Type narrowing helpers:
+
+```ts
+if (report.output.type === "markdown") {
+  console.log(report.markdown);
+}
+```
+
 ---
 
 ## Errors
+
 
 The SDK throws typed errors:
 
@@ -283,18 +267,20 @@ The SDK throws typed errors:
 - `ValidationError` for 422
 - `RateLimitError` for 429 (may include `retryAfterMs`)
 - `JobFailedError` / `JobCanceledError` from polling helpers
+- `MappaError` for client-side validation or runtime constraints
 
 ```ts
 import {
   ApiError,
   AuthError,
+  MappaError,
   RateLimitError,
   ValidationError,
 } from "@mappa-ai/mappa-node";
 
 try {
-  await mappa.reports.generate({
-    media: { url: "https://example.com/media.mp3" },
+  await mappa.reports.generateFromUrl({
+    url: "https://example.com/media.mp3",
     output: { type: "markdown" },
   });
 } catch (err) {
@@ -318,6 +304,11 @@ try {
     throw err;
   }
 
+  if (err instanceof MappaError) {
+    console.error("Client error", err.message);
+    throw err;
+  }
+
   throw err;
 }
 ```
@@ -327,6 +318,11 @@ try {
 ## Webhooks
 
 Use `mappa.webhooks.verifySignature()` to verify incoming webhook events.
+
+Tips for raw body handling:
+- Express: `express.text({ type: "*/*" })`
+- Fastify: use `rawBody` (enable `bodyLimit` and `rawBody`)
+- Next.js (App Router): read `await req.text()` before parsing
 
 The SDK expects a header shaped like:
 

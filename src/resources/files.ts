@@ -1,3 +1,4 @@
+import { MappaError } from "$/errors";
 import type { Transport } from "$/resources/transport";
 import type { FileDeleteReceipt, MediaObject } from "$/types";
 
@@ -15,7 +16,7 @@ export type UploadRequest = {
 };
 
 /**
- * Best-in-class note: Uses multipart/form-data for uploads.
+ * Uses multipart/form-data for uploads.
  *
  * If you need resumable uploads, add a dedicated resumable protocol.
  */
@@ -24,7 +25,7 @@ export class FilesResource {
 
 	async upload(req: UploadRequest): Promise<MediaObject> {
 		if (typeof FormData === "undefined") {
-			throw new Error(
+			throw new MappaError(
 				"FormData is not available in this runtime; cannot perform multipart upload",
 			);
 		}
@@ -32,7 +33,7 @@ export class FilesResource {
 		const derivedContentType = inferContentType(req.file, req.filename);
 		const contentType = req.contentType ?? derivedContentType;
 		if (!contentType) {
-			throw new Error(
+			throw new MappaError(
 				"contentType is required when it cannot be inferred from file.type or filename",
 			);
 		}
@@ -70,7 +71,7 @@ export class FilesResource {
 			signal?: AbortSignal;
 		},
 	): Promise<FileDeleteReceipt> {
-		if (!mediaId) throw new Error("mediaId is required");
+		if (!mediaId) throw new MappaError("mediaId is required");
 
 		const res = await this.transport.request<FileDeleteReceipt>({
 			method: "DELETE",
@@ -176,7 +177,7 @@ async function toFormDataPart(
 	if (typeof ReadableStream !== "undefined" && file instanceof ReadableStream) {
 		// Most runtimes (Node 18+/Bun/modern browsers) can convert stream -> Blob via Response.
 		if (typeof Response === "undefined") {
-			throw new Error(
+			throw new MappaError(
 				"ReadableStream upload requires Response to convert stream to Blob",
 			);
 		}
@@ -185,5 +186,5 @@ async function toFormDataPart(
 		return blob.slice(0, blob.size, contentType);
 	}
 
-	throw new Error("Unsupported file type for upload()");
+	throw new MappaError("Unsupported file type for upload()");
 }

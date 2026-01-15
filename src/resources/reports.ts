@@ -1,3 +1,4 @@
+import { MappaError } from "$/errors";
 import type { UploadRequest } from "$/resources/files";
 import type { JobsResource } from "$/resources/jobs";
 import type { Transport } from "$/resources/transport";
@@ -24,19 +25,19 @@ function validateMedia(media: MediaIdRef): void {
 	const isObj = (v: unknown): v is Record<string, unknown> =>
 		v !== null && typeof v === "object";
 
-	if (!isObj(m)) throw new Error("media must be an object");
+	if (!isObj(m)) throw new MappaError("media must be an object");
 
 	// Report job creation only supports already-uploaded media references.
 	// Use `createJobFromFile` / `createJobFromUrl` to start from bytes or a remote URL.
 	if ((m as { url?: unknown }).url !== undefined) {
-		throw new Error(
+		throw new MappaError(
 			"media.url is not supported; pass { mediaId } or use createJobFromUrl()",
 		);
 	}
 
 	const mediaId = (m as { mediaId?: unknown }).mediaId;
 	if (typeof mediaId !== "string" || !mediaId) {
-		throw new Error("media.mediaId must be a non-empty string");
+		throw new MappaError("media.mediaId must be a non-empty string");
 	}
 }
 
@@ -165,10 +166,10 @@ export class ReportsResource {
 	}
 
 	/**
-	 * Best-in-class DX: Upload a file and create a report job in one call.
+	 * Upload a file and create a report job in one call.
 	 *
-	 * This keeps `createJob()` clean (it always accepts `media: { mediaId }`),
-	 * while providing a one-liner for the common "I have bytes" workflow.
+	 * Keeps `createJob()` strict about `media: { mediaId }` while offering a
+	 * convenient helper when you start from raw bytes.
 	 */
 	async createJobFromFile(
 		req: ReportCreateJobFromFileRequest,
@@ -201,9 +202,9 @@ export class ReportsResource {
 	}
 
 	/**
-	 * Best-in-class DX: Download a file from a URL, upload it, and create a report job.
+	 * Download a file from a URL, upload it, and create a report job.
 	 *
-	 * This is the recommended way to start from a remote URL now that report job creation
+	 * Recommended when starting from a remote URL because report job creation
 	 * only accepts `media: { mediaId }`.
 	 *
 	 * Workflow:
@@ -233,27 +234,27 @@ export class ReportsResource {
 		try {
 			parsed = new URL(url);
 		} catch {
-			throw new Error("url must be a valid URL");
+			throw new MappaError("url must be a valid URL");
 		}
 		if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-			throw new Error("url must use http: or https:");
+			throw new MappaError("url must use http: or https:");
 		}
 
 		const res = await this.fetchImpl(parsed.toString(), { signal });
 		if (!res.ok) {
-			throw new Error(`Failed to download url (status ${res.status})`);
+			throw new MappaError(`Failed to download url (status ${res.status})`);
 		}
 
 		const derivedContentType = res.headers.get("content-type") ?? undefined;
 		const contentType = contentTypeOverride ?? derivedContentType;
 		if (!contentType) {
-			throw new Error(
+			throw new MappaError(
 				"contentType is required when it cannot be inferred from the download response",
 			);
 		}
 
 		if (typeof Blob === "undefined") {
-			throw new Error(
+			throw new MappaError(
 				"Blob is not available in this runtime; cannot download and upload from url",
 			);
 		}
@@ -314,13 +315,13 @@ export class ReportsResource {
 	): Promise<Report> {
 		const receipt = await this.createJob(req);
 		if (!receipt.handle) {
-			throw new Error("Job receipt is missing handle");
+			throw new MappaError("Job receipt is missing handle");
 		}
 		return receipt.handle.wait(opts?.wait);
 	}
 
 	/**
-	 * Best-in-class DX: createJobFromFile + wait + get.
+	 * Convenience wrapper: createJobFromFile + wait + get.
 	 * Use for scripts; for production prefer createJobFromFile + webhooks/stream.
 	 */
 	async generateFromFile(
@@ -328,12 +329,12 @@ export class ReportsResource {
 		opts?: { wait?: WaitOptions },
 	): Promise<Report> {
 		const receipt = await this.createJobFromFile(req);
-		if (!receipt.handle) throw new Error("Job receipt is missing handle");
+		if (!receipt.handle) throw new MappaError("Job receipt is missing handle");
 		return receipt.handle.wait(opts?.wait);
 	}
 
 	/**
-	 * Best-in-class DX: createJobFromUrl + wait + get.
+	 * Convenience wrapper: createJobFromUrl + wait + get.
 	 * Use for scripts; for production prefer createJobFromUrl + webhooks/stream.
 	 */
 	async generateFromUrl(
@@ -341,7 +342,7 @@ export class ReportsResource {
 		opts?: { wait?: WaitOptions },
 	): Promise<Report> {
 		const receipt = await this.createJobFromUrl(req);
-		if (!receipt.handle) throw new Error("Job receipt is missing handle");
+		if (!receipt.handle) throw new MappaError("Job receipt is missing handle");
 		return receipt.handle.wait(opts?.wait);
 	}
 
@@ -356,7 +357,7 @@ export class ReportsResource {
 			async wait(opts?: WaitOptions): Promise<Report> {
 				const terminal = await self.jobs.wait(jobId, opts);
 				if (!terminal.reportId)
-					throw new Error(
+					throw new MappaError(
 						`Job ${jobId} succeeded but no reportId was returned`,
 					);
 				return self.get(terminal.reportId);
@@ -368,7 +369,7 @@ export class ReportsResource {
 	}
 
 	private defaultIdempotencyKey(_req: ReportCreateJobRequest): string {
-		// Best-in-class: deterministic keys can be added later; random still prevents accidental duplicates on retries.
+		// Deterministic keys can be added later; random avoids accidental duplicates on retries.
 		return randomId("idem");
 	}
 }

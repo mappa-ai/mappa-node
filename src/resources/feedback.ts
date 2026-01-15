@@ -1,3 +1,4 @@
+import { MappaError } from "$/errors";
 import type { Transport } from "$/resources/transport";
 import type { FeedbackReceipt } from "$/types";
 
@@ -18,7 +19,7 @@ export class FeedbackResource {
 
 	async create(req: FeedbackCreateRequest): Promise<FeedbackReceipt> {
 		if (!!req.reportId === !!req.jobId)
-			throw new Error("Provide exactly one of reportId or jobId");
+			throw new MappaError("Provide exactly one of reportId or jobId");
 
 		const res = await this.transport.request<FeedbackReceipt>({
 			method: "POST",

@@ -90,8 +90,15 @@ export class JobsResource {
 			}
 
 			if (nowMs() - start > timeoutMs) {
-				throw new Error(
+				throw new JobFailedError(
+					jobId,
 					`Timed out waiting for job ${jobId} after ${timeoutMs}ms`,
+					{
+						cause: {
+							jobId,
+							timeoutMs,
+						},
+					},
 				);
 			}
 
@@ -102,7 +109,7 @@ export class JobsResource {
 	}
 
 	/**
-	 * Best-in-class: public stream API.
+	 * Public stream API.
 	 * If you add SSE later, keep this signature and switch implementation internally.
 	 * For now, it yields events based on polling.
 	 */
