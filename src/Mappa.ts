@@ -1,4 +1,5 @@
 import { MappaError } from "$/errors";
+import { CreditsResource } from "$/resources/credits";
 import { FeedbackResource } from "$/resources/feedback";
 import { FilesResource } from "$/resources/files";
 import { HealthResource } from "$/resources/health";
@@ -73,6 +74,7 @@ export class Mappa {
 	public readonly jobs: JobsResource;
 	public readonly reports: ReportsResource;
 	public readonly feedback: FeedbackResource;
+	public readonly credits: CreditsResource;
 	public readonly webhooks: WebhooksResource;
 	public readonly health: HealthResource;
 
@@ -119,6 +121,7 @@ export class Mappa {
 			this.opts.fetch ?? fetch,
 		);
 		this.feedback = new FeedbackResource(this.transport);
+		this.credits = new CreditsResource(this.transport);
 		this.webhooks = new WebhooksResource();
 		this.health = new HealthResource(this.transport);
 	}

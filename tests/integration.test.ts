@@ -9,6 +9,10 @@ import {
 import type { MediaIdRef } from "../src/index";
 import {
 	AuthError,
+	isJsonReport,
+	isMarkdownReport,
+	isPdfReport,
+	isUrlReport,
 	Mappa,
 	RateLimitError,
 	ValidationError,
@@ -301,5 +305,291 @@ describe("SDK integration", () => {
 		expect(thrown).toBeInstanceOf(ValidationError);
 		const e = thrown as ValidationError;
 		expect(e.status).toBe(422);
+	});
+
+	describe("files resource", () => {
+		test("files.get returns file metadata", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			// Upload a file first
+			const upload = await client.files.upload({
+				file: new Uint8Array([1, 2, 3]),
+				contentType: "audio/wav",
+				filename: "test.wav",
+			});
+
+			const file = await client.files.get(upload.mediaId);
+
+			expect(file.mediaId).toBe(upload.mediaId);
+			expect(file.contentType).toBe("audio/wav");
+			expect(file.processingStatus).toBe("COMPLETED");
+			expect(file.retention).toBeDefined();
+			expect(file.retention.locked).toBe(false);
+		});
+
+		test("files.list returns paginated files", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const page1 = await client.files.list({ limit: 10 });
+
+			expect(page1.files.length).toBe(10);
+			expect(page1.hasMore).toBe(true);
+			expect(page1.cursor).toBeDefined();
+		});
+
+		test("files.list handles cursor pagination", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const page1 = await client.files.list({ limit: 10 });
+			const page2 = await client.files.list({
+				limit: 10,
+				cursor: page1.cursor,
+			});
+
+			expect(page2.files.length).toBe(10);
+			expect(page2.files[0]?.mediaId).not.toBe(page1.files[0]?.mediaId);
+		});
+
+		test("files.listAll iterates all files", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const allFiles = [];
+			for await (const file of client.files.listAll({ limit: 10 })) {
+				allFiles.push(file);
+			}
+
+			expect(allFiles.length).toBe(25); // Test server has 25 files
+		});
+
+		test("files.setRetentionLock locks retention", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const upload = await client.files.upload({
+				file: new Uint8Array([1, 2, 3]),
+				contentType: "audio/wav",
+			});
+
+			const result = await client.files.setRetentionLock(upload.mediaId, true);
+
+			expect(result.mediaId).toBe(upload.mediaId);
+			expect(result.retentionLock).toBe(true);
+			expect(result.message).toContain("enabled");
+		});
+
+		test("files.setRetentionLock unlocks retention", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const upload = await client.files.upload({
+				file: new Uint8Array([1, 2, 3]),
+				contentType: "audio/wav",
+			});
+
+			await client.files.setRetentionLock(upload.mediaId, true);
+			const result = await client.files.setRetentionLock(upload.mediaId, false);
+
+			expect(result.retentionLock).toBe(false);
+			expect(result.message).toContain("disabled");
+		});
+	});
+
+	describe("credits resource", () => {
+		test("credits.getBalance returns balance info", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const balance = await client.credits.getBalance();
+
+			expect(balance.balance).toBe(1000);
+			expect(balance.reserved).toBe(100);
+			expect(balance.available).toBe(900);
+		});
+
+		test("credits.listTransactions returns paginated transactions", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const result = await client.credits.listTransactions({ limit: 25 });
+
+			expect(result.transactions.length).toBe(25);
+			expect(result.pagination.limit).toBe(25);
+			expect(result.pagination.offset).toBe(0);
+			expect(result.pagination.total).toBe(150);
+		});
+
+		test("credits.listTransactions respects offset", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const page1 = await client.credits.listTransactions({
+				limit: 25,
+				offset: 0,
+			});
+			const page2 = await client.credits.listTransactions({
+				limit: 25,
+				offset: 25,
+			});
+
+			expect(page2.transactions[0]?.id).not.toBe(page1.transactions[0]?.id);
+		});
+
+		test("credits.listAllTransactions iterates all transactions", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const allTx = [];
+			for await (const tx of client.credits.listAllTransactions({
+				limit: 50,
+			})) {
+				allTx.push(tx);
+			}
+
+			expect(allTx.length).toBe(150);
+		});
+
+		test("credits.getJobUsage returns usage for job", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			// Create a job first
+			const upload = await client.files.upload({
+				file: new Uint8Array([1, 2, 3]),
+				contentType: "audio/wav",
+			});
+
+			const receipt = await client.reports.createJob({
+				media: { mediaId: upload.mediaId },
+				output: { type: "markdown", template: "general_report" },
+			});
+
+			const usage = await client.credits.getJobUsage(receipt.jobId);
+
+			expect(usage.jobId).toBe(receipt.jobId);
+			expect(usage.creditsUsed).toBe(100);
+			expect(usage.creditsNetUsed).toBe(90);
+		});
+
+		test("credits.hasEnough returns true when sufficient", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const hasEnough = await client.credits.hasEnough(500);
+
+			expect(hasEnough).toBe(true);
+		});
+
+		test("credits.hasEnough returns false when insufficient", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const hasEnough = await client.credits.hasEnough(1000);
+
+			expect(hasEnough).toBe(false); // available is 900
+		});
+
+		test("credits.getAvailable returns available credits", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const available = await client.credits.getAvailable();
+
+			expect(available).toBe(900);
+		});
+	});
+
+	describe("type guards", () => {
+		test("isMarkdownReport identifies markdown reports", () => {
+			const report = {
+				id: "report_1",
+				createdAt: new Date().toISOString(),
+				media: { mediaId: "media_1" },
+				output: { type: "markdown" as const, template: "general_report" },
+				markdown: "# Test",
+			};
+
+			expect(isMarkdownReport(report)).toBe(true);
+			expect(isJsonReport(report)).toBe(false);
+			expect(isPdfReport(report)).toBe(false);
+			expect(isUrlReport(report)).toBe(false);
+		});
+
+		test("isJsonReport identifies json reports", () => {
+			const report = {
+				id: "report_1",
+				createdAt: new Date().toISOString(),
+				media: { mediaId: "media_1" },
+				output: { type: "json" as const, template: "general_report" },
+				sections: [],
+			};
+
+			expect(isJsonReport(report)).toBe(true);
+			expect(isMarkdownReport(report)).toBe(false);
+			expect(isPdfReport(report)).toBe(false);
+			expect(isUrlReport(report)).toBe(false);
+		});
+
+		test("isPdfReport identifies pdf reports", () => {
+			const report = {
+				id: "report_1",
+				createdAt: new Date().toISOString(),
+				media: { mediaId: "media_1" },
+				output: { type: "pdf" as const, template: "general_report" },
+				markdown: "# Test",
+				pdfUrl: "https://example.com/report.pdf",
+			};
+
+			expect(isPdfReport(report)).toBe(true);
+			expect(isMarkdownReport(report)).toBe(false);
+			expect(isJsonReport(report)).toBe(false);
+			expect(isUrlReport(report)).toBe(false);
+		});
+
+		test("isUrlReport identifies url reports", () => {
+			const report = {
+				id: "report_1",
+				createdAt: new Date().toISOString(),
+				media: { mediaId: "media_1" },
+				output: { type: "url" as const, template: "general_report" },
+				reportUrl: "https://example.com/report",
+			};
+
+			expect(isUrlReport(report)).toBe(true);
+			expect(isMarkdownReport(report)).toBe(false);
+			expect(isJsonReport(report)).toBe(false);
+			expect(isPdfReport(report)).toBe(false);
+		});
 	});
 });

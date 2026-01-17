@@ -27,6 +27,14 @@ export class TestApiServer {
 	private jobToReportId: Map<string, string> = new Map();
 	private lastUploadedMediaId: string | undefined;
 
+	// Mock data for files
+	private mediaFiles: Map<string, unknown> = new Map();
+	private retentionLocks: Map<string, boolean> = new Map();
+
+	// Mock data for credits
+	private creditBalance = { balance: 1000, reserved: 100, available: 900 };
+	private transactions: unknown[] = this.generateMockTransactions();
+
 	start(): void {
 		if (this.server) return;
 
@@ -47,6 +55,39 @@ export class TestApiServer {
 		this.jobCalls.clear();
 		this.jobToReportId.clear();
 		this.lastUploadedMediaId = undefined;
+		this.mediaFiles.clear();
+		this.retentionLocks.clear();
+		this.creditBalance = { balance: 1000, reserved: 100, available: 900 };
+		this.transactions = this.generateMockTransactions();
+	}
+
+	private generateMockTransactions(): unknown[] {
+		// Generate 150 mock transactions for pagination testing
+		const transactions: unknown[] = [];
+		const types = [
+			"PURCHASE",
+			"USAGE",
+			"SUBSCRIPTION_GRANT",
+			"REFUND",
+			"FEEDBACK_DISCOUNT",
+		];
+
+		for (let i = 0; i < 150; i++) {
+			transactions.push({
+				id: `tx_${i + 1}`,
+				type: types[i % types.length],
+				amount: i % 2 === 0 ? 100 : -50,
+				createdAt: new Date(Date.now() - i * 1000 * 60 * 60).toISOString(),
+				effectiveAt: new Date(Date.now() - i * 1000 * 60 * 60).toISOString(),
+				expiresAt:
+					i % 3 === 0
+						? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+						: null,
+				jobId: i % 5 === 0 ? `job_${randomUUID()}` : null,
+			});
+		}
+
+		return transactions;
 	}
 
 	get baseUrl(): string {
@@ -182,6 +223,126 @@ export class TestApiServer {
 					contentType,
 					...(typeof filename === "string" && filename ? { filename } : {}),
 					sizeBytes: file.size,
+				},
+				{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+			);
+		}
+
+		if (req.method === "GET" && path === "/v1/files") {
+			// GET /v1/files (list)
+			const limit = Number.parseInt(u.searchParams.get("limit") ?? "20", 10);
+			const cursor = u.searchParams.get("cursor");
+
+			// Generate mock files
+			const totalFiles = 25;
+			const files: unknown[] = [];
+
+			let startIdx = 0;
+			if (cursor) {
+				startIdx = Number.parseInt(cursor, 10);
+			}
+
+			for (let i = startIdx; i < Math.min(startIdx + limit, totalFiles); i++) {
+				files.push({
+					mediaId: `media_${i + 1}`,
+					createdAt: new Date(Date.now() - i * 1000 * 60).toISOString(),
+					contentType: "audio/wav",
+					filename: `test-file-${i + 1}.wav`,
+					sizeBytes: 1024 * (i + 1),
+					durationSeconds: 30 + i,
+					processingStatus: "COMPLETED",
+					lastUsedAt: new Date(Date.now() - i * 1000 * 30).toISOString(),
+					retention: {
+						expiresAt: new Date(
+							Date.now() + 180 * 24 * 60 * 60 * 1000,
+						).toISOString(),
+						daysRemaining: 180,
+						locked: this.retentionLocks.get(`media_${i + 1}`) ?? false,
+					},
+				});
+			}
+
+			const hasMore = startIdx + limit < totalFiles;
+			const nextCursor = hasMore ? String(startIdx + limit) : undefined;
+
+			return this.json(
+				200,
+				{
+					files,
+					cursor: nextCursor,
+					hasMore,
+				},
+				{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+			);
+		}
+
+		if (
+			req.method === "GET" &&
+			path.startsWith("/v1/files/") &&
+			!path.includes("/retention")
+		) {
+			// GET specific file
+			const mediaId = decodeURIComponent(path.slice("/v1/files/".length));
+			const file =
+				this.mediaFiles.get(mediaId) ??
+				(this.lastUploadedMediaId === mediaId
+					? {
+							mediaId,
+							createdAt: new Date().toISOString(),
+							contentType: "audio/wav",
+							filename: "test.wav",
+							sizeBytes: 1024,
+							durationSeconds: 30,
+							processingStatus: "COMPLETED",
+							lastUsedAt: new Date().toISOString(),
+							retention: {
+								expiresAt: new Date(
+									Date.now() + 180 * 24 * 60 * 60 * 1000,
+								).toISOString(),
+								daysRemaining: 180,
+								locked: this.retentionLocks.get(mediaId) ?? false,
+							},
+						}
+					: null);
+
+			if (!file) {
+				return this.json(
+					404,
+					{ error: { code: "not_found", message: "File not found" } },
+					{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+				);
+			}
+
+			return this.json(200, file, {
+				"x-request-id": req.headers.get("x-request-id") ?? randomUUID(),
+			});
+		}
+
+		if (req.method === "PATCH" && path.includes("/retention")) {
+			const mediaId = decodeURIComponent(
+				path.slice("/v1/files/".length).replace("/retention", ""),
+			);
+			const body = record.json as { lock?: boolean } | undefined;
+
+			if (!this.lastUploadedMediaId || mediaId !== this.lastUploadedMediaId) {
+				return this.json(
+					404,
+					{ error: { code: "not_found", message: "File not found" } },
+					{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+				);
+			}
+
+			const locked = body?.lock ?? false;
+			this.retentionLocks.set(mediaId, locked);
+
+			return this.json(
+				200,
+				{
+					mediaId,
+					retentionLock: locked,
+					message: locked
+						? "Retention lock enabled"
+						: "Retention lock disabled",
 				},
 				{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
 			);
@@ -369,6 +530,60 @@ export class TestApiServer {
 			return this.json(200, this.makeMarkdownReport(reportId), {
 				"x-request-id": req.headers.get("x-request-id") ?? randomUUID(),
 			});
+		}
+
+		if (req.method === "GET" && path === "/v1/credits/balance") {
+			return this.json(200, this.creditBalance, {
+				"x-request-id": req.headers.get("x-request-id") ?? randomUUID(),
+			});
+		}
+
+		if (req.method === "GET" && path === "/v1/credits/transactions") {
+			const limit = Number.parseInt(u.searchParams.get("limit") ?? "50", 10);
+			const offset = Number.parseInt(u.searchParams.get("offset") ?? "0", 10);
+
+			const paginatedTransactions = this.transactions.slice(
+				offset,
+				offset + limit,
+			);
+
+			return this.json(
+				200,
+				{
+					transactions: paginatedTransactions,
+					pagination: {
+						limit,
+						offset,
+						total: this.transactions.length,
+					},
+				},
+				{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+			);
+		}
+
+		if (req.method === "GET" && path.startsWith("/v1/credits/usage/")) {
+			const jobId = decodeURIComponent(path.slice("/v1/credits/usage/".length));
+
+			if (!this.jobToReportId.has(jobId)) {
+				return this.json(
+					404,
+					{ error: { code: "not_found", message: "Job not found" } },
+					{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+				);
+			}
+
+			return this.json(
+				200,
+				{
+					jobId,
+					creditsUsed: 100,
+					creditsDiscounted: 10,
+					creditsNetUsed: 90,
+					durationMs: 5000,
+					modelVersion: "v1.0.0",
+				},
+				{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+			);
 		}
 
 		return this.json(

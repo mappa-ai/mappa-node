@@ -40,7 +40,7 @@ export type ReportTemplateParamsMap = {
 	};
 };
 
-export type ReportOutputType = "markdown" | "json";
+export type ReportOutputType = "markdown" | "json" | "pdf" | "url";
 
 type ReportOutputEntry<
 	OutputType extends ReportOutputType,
@@ -65,7 +65,9 @@ type ReportOutputForType<OutputType extends ReportOutputType> =
 
 export type ReportOutput =
 	| ReportOutputForType<"markdown">
-	| ReportOutputForType<"json">;
+	| ReportOutputForType<"json">
+	| ReportOutputForType<"pdf">
+	| ReportOutputForType<"url">;
 
 export type TargetStrategy =
 	| "dominant"
@@ -154,6 +156,11 @@ export type JobStatus =
 	| "failed"
 	| "canceled";
 
+export type JobCreditReservation = {
+	reservedCredits: number | null;
+	reservationStatus: "active" | "released" | "applied" | null;
+};
+
 export type Job = {
 	id: string;
 	type: "report.generate";
@@ -164,6 +171,8 @@ export type Job = {
 	updatedAt: string;
 	reportId?: string;
 	usage?: Usage;
+	credits?: JobCreditReservation;
+	releasedCredits?: number | null;
 	error?: {
 		code: string;
 		message: string;
@@ -183,6 +192,11 @@ export type Subject = {
 	id?: string;
 	externalRef?: string;
 	metadata?: Record<string, JsonValue>;
+};
+
+export type WebhookConfig = {
+	url: string;
+	headers?: Record<string, string>;
 };
 
 export type ReportCreateJobRequest = {
@@ -207,6 +221,16 @@ export type ReportCreateJobRequest = {
 		includeMetrics?: boolean;
 		includeRawModelOutput?: boolean;
 	};
+	/**
+	 * Webhook to call when the job completes or fails.
+	 *
+	 * @example
+	 * webhook: {
+	 *   url: "https://example.com/webhooks/mappa",
+	 *   headers: { "X-Custom-Header": "value" }
+	 * }
+	 */
+	webhook?: WebhookConfig;
 	idempotencyKey?: string;
 	requestId?: string;
 };
@@ -234,7 +258,23 @@ export type JsonReport = ReportBase & {
 	}>;
 };
 
-export type Report = MarkdownReport | JsonReport;
+export type PdfReport = ReportBase & {
+	output: { type: "pdf"; template: string };
+	markdown: string;
+	pdfUrl: string;
+};
+
+export type UrlReport = ReportBase & {
+	output: { type: "url"; template: string };
+	markdown?: string;
+	sections?: Array<{
+		section_title: string;
+		section_content: JsonValue;
+	}>;
+	reportUrl: string;
+};
+
+export type Report = MarkdownReport | JsonReport | PdfReport | UrlReport;
 
 export type ReportJobReceipt = {
 	jobId: string;
@@ -268,9 +308,104 @@ export type MediaObject = {
 	sizeBytes?: number;
 };
 
+export type MediaProcessingStatus =
+	| "PENDING"
+	| "PROCESSING"
+	| "COMPLETED"
+	| "FAILED";
+
+export type MediaRetention = {
+	expiresAt: string | null;
+	daysRemaining: number | null;
+	locked: boolean;
+};
+
+export type MediaFile = {
+	mediaId: string;
+	createdAt: string;
+	contentType: string;
+	filename: string | null;
+	sizeBytes: number | null;
+	durationSeconds: number | null;
+	processingStatus: MediaProcessingStatus;
+	lastUsedAt: string | null;
+	retention: MediaRetention;
+};
+
 export type FileDeleteReceipt = {
 	mediaId: string;
 	deleted: true;
+};
+
+export type RetentionLockResult = {
+	mediaId: string;
+	retentionLock: boolean;
+	message: string;
+};
+
+export type CursorPaginationParams = {
+	limit?: number;
+	cursor?: string;
+};
+
+export type OffsetPaginationParams = {
+	limit?: number;
+	offset?: number;
+};
+
+export type CursorPage<T> = {
+	data: T[];
+	cursor?: string;
+	hasMore: boolean;
+};
+
+export type OffsetPage<T> = {
+	data: T[];
+	pagination: {
+		limit: number;
+		offset: number;
+		total: number;
+	};
+};
+
+export type CreditBalance = {
+	balance: number;
+	reserved: number;
+	available: number;
+};
+
+export type CreditTransactionType =
+	| "PURCHASE"
+	| "SUBSCRIPTION_GRANT"
+	| "PROMO_GRANT"
+	| "USAGE"
+	| "REFUND"
+	| "FEEDBACK_DISCOUNT"
+	| "ADJUSTMENT"
+	| "EXPIRATION";
+
+export type CreditTransaction = {
+	id: string;
+	type: CreditTransactionType;
+	amount: number;
+	createdAt: string;
+	effectiveAt: string;
+	expiresAt: string | null;
+	jobId: string | null;
+	job?: {
+		id: string;
+		status: string;
+		createdAt: string;
+	};
+};
+
+export type CreditUsage = {
+	jobId: string;
+	creditsUsed: number;
+	creditsDiscounted?: number;
+	creditsNetUsed: number;
+	durationMs?: number;
+	modelVersion?: string;
 };
 
 /**
@@ -321,3 +456,31 @@ export type ReportRunHandle = {
 	job(): Promise<Job>;
 	report(): Promise<Report | null>;
 };
+
+/**
+ * Type guard for MarkdownReport.
+ */
+export function isMarkdownReport(report: Report): report is MarkdownReport {
+	return report.output.type === "markdown";
+}
+
+/**
+ * Type guard for JsonReport.
+ */
+export function isJsonReport(report: Report): report is JsonReport {
+	return report.output.type === "json";
+}
+
+/**
+ * Type guard for PdfReport.
+ */
+export function isPdfReport(report: Report): report is PdfReport {
+	return report.output.type === "pdf";
+}
+
+/**
+ * Type guard for UrlReport.
+ */
+export function isUrlReport(report: Report): report is UrlReport {
+	return report.output.type === "url";
+}

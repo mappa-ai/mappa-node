@@ -9,6 +9,12 @@
 export * from "$/errors";
 export { Mappa } from "$/Mappa";
 export type * from "$/types";
+export {
+	isJsonReport,
+	isMarkdownReport,
+	isPdfReport,
+	isUrlReport,
+} from "$/types";
 
 import { MappaError } from "$/errors";
 
