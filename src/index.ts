@@ -10,6 +10,7 @@ export * from "$/errors";
 export { Mappa } from "$/Mappa";
 export type * from "$/types";
 export {
+	hasEntity,
 	isJsonReport,
 	isMarkdownReport,
 	isPdfReport,

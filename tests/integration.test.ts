@@ -9,6 +9,7 @@ import {
 import type { MediaIdRef } from "../src/index";
 import {
 	AuthError,
+	hasEntity,
 	isJsonReport,
 	isMarkdownReport,
 	isPdfReport,
@@ -530,12 +531,193 @@ describe("SDK integration", () => {
 		});
 	});
 
+	describe("entities resource", () => {
+		test("entities.get returns entity metadata", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const entity = await client.entities.get("entity_1");
+
+			expect(entity.id).toBe("entity_1");
+			expect(entity.tags).toEqual(["interviewer", "sales-rep"]);
+			expect(entity.mediaCount).toBe(5);
+			expect(entity.createdAt).toBeDefined();
+			expect(entity.lastSeenAt).toBeDefined();
+		});
+
+		test("entities.list returns paginated entities", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const result = await client.entities.list({ limit: 2 });
+
+			expect(result.entities).toBeArrayOfSize(2);
+			expect(result.hasMore).toBe(true);
+			expect(result.cursor).toBeDefined();
+		});
+
+		test("entities.list filters by tags", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const result = await client.entities.list({ tags: ["interviewer"] });
+
+			expect(result.entities.length).toBeGreaterThan(0);
+			for (const entity of result.entities) {
+				expect(entity.tags).toContain("interviewer");
+			}
+		});
+
+		test("entities.list filters by multiple tags (AND logic)", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const result = await client.entities.list({
+				tags: ["interviewer", "sales-rep"],
+			});
+
+			expect(result.entities).toBeArrayOfSize(1);
+			expect(result.entities[0]?.id).toBe("entity_1");
+			expect(result.entities[0]?.tags).toEqual(["interviewer", "sales-rep"]);
+		});
+
+		test("entities.listAll iterates all entities", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const entities: string[] = [];
+			for await (const entity of client.entities.listAll({ limit: 2 })) {
+				entities.push(entity.id);
+			}
+
+			expect(entities.length).toBe(4);
+		});
+
+		test("entities.getByTag returns entities with specific tag", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const result = await client.entities.getByTag("interviewer");
+
+			expect(result.entities.length).toBeGreaterThan(0);
+			for (const entity of result.entities) {
+				expect(entity.tags).toContain("interviewer");
+			}
+		});
+
+		test("entities.addTags adds tags to entity", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const result = await client.entities.addTags("entity_4", [
+				"new-tag",
+				"another-tag",
+			]);
+
+			expect(result.entityId).toBe("entity_4");
+			expect(result.tags).toContain("new-tag");
+			expect(result.tags).toContain("another-tag");
+		});
+
+		test("entities.removeTags removes tags from entity", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			// First add a tag
+			await client.entities.addTags("entity_3", ["temp-tag"]);
+
+			// Then remove it
+			const result = await client.entities.removeTags("entity_3", ["temp-tag"]);
+
+			expect(result.entityId).toBe("entity_3");
+			expect(result.tags).not.toContain("temp-tag");
+		});
+
+		test("entities.setTags replaces all tags", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const result = await client.entities.setTags("entity_2", [
+				"replaced-tag",
+			]);
+
+			expect(result.entityId).toBe("entity_2");
+			expect(result.tags).toEqual(["replaced-tag"]);
+		});
+
+		test("entities.setTags with empty array clears all tags", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const result = await client.entities.setTags("entity_1", []);
+
+			expect(result.entityId).toBe("entity_1");
+			expect(result.tags).toEqual([]);
+		});
+
+		test("entities validates tag format", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			await expect(
+				client.entities.addTags("entity_1", ["invalid tag with spaces"]),
+			).rejects.toThrow("Invalid tag");
+		});
+
+		test("entities validates tag length", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const longTag = "a".repeat(65);
+			await expect(
+				client.entities.addTags("entity_1", [longTag]),
+			).rejects.toThrow("Invalid tag");
+		});
+
+		test("entities validates max tags per request", async () => {
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+			});
+
+			const tooManyTags = Array.from({ length: 11 }, (_, i) => `tag-${i}`);
+			await expect(
+				client.entities.addTags("entity_1", tooManyTags),
+			).rejects.toThrow("Too many tags");
+		});
+	});
+
 	describe("type guards", () => {
 		test("isMarkdownReport identifies markdown reports", () => {
 			const report = {
 				id: "report_1",
 				createdAt: new Date().toISOString(),
 				media: { mediaId: "media_1" },
+				entity: { id: "entity_test", tags: ["test"] },
 				output: { type: "markdown" as const, template: "general_report" },
 				markdown: "# Test",
 			};
@@ -551,6 +733,7 @@ describe("SDK integration", () => {
 				id: "report_1",
 				createdAt: new Date().toISOString(),
 				media: { mediaId: "media_1" },
+				entity: { id: "entity_test", tags: ["test"] },
 				output: { type: "json" as const, template: "general_report" },
 				sections: [],
 			};
@@ -566,6 +749,7 @@ describe("SDK integration", () => {
 				id: "report_1",
 				createdAt: new Date().toISOString(),
 				media: { mediaId: "media_1" },
+				entity: { id: "entity_test", tags: ["test"] },
 				output: { type: "pdf" as const, template: "general_report" },
 				markdown: "# Test",
 				pdfUrl: "https://example.com/report.pdf",
@@ -582,6 +766,7 @@ describe("SDK integration", () => {
 				id: "report_1",
 				createdAt: new Date().toISOString(),
 				media: { mediaId: "media_1" },
+				entity: { id: "entity_test", tags: ["test"] },
 				output: { type: "url" as const, template: "general_report" },
 				reportUrl: "https://example.com/report",
 			};
@@ -590,6 +775,21 @@ describe("SDK integration", () => {
 			expect(isMarkdownReport(report)).toBe(false);
 			expect(isJsonReport(report)).toBe(false);
 			expect(isPdfReport(report)).toBe(false);
+		});
+
+		test("hasEntity checks if report has entity info", () => {
+			const report = {
+				id: "report_1",
+				createdAt: new Date().toISOString(),
+				media: { mediaId: "media_1" },
+				entity: { id: "entity_test", tags: ["test"] },
+				output: { type: "markdown" as const, template: "general_report" },
+				markdown: "# Test",
+			};
+
+			expect(hasEntity(report)).toBe(true);
+			expect(report.entity.id).toBe("entity_test");
+			expect(report.entity.tags).toEqual(["test"]);
 		});
 	});
 });

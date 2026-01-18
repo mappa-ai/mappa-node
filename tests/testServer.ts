@@ -35,6 +35,19 @@ export class TestApiServer {
 	private creditBalance = { balance: 1000, reserved: 100, available: 900 };
 	private transactions: unknown[] = this.generateMockTransactions();
 
+	// Mock data for entities
+	private entities: Map<
+		string,
+		{
+			id: string;
+			tags: string[];
+			createdAt: string;
+			mediaCount: number;
+			lastSeenAt: string | null;
+		}
+	> = new Map();
+	private entityTags: Map<string, Set<string>> = new Map();
+
 	start(): void {
 		if (this.server) return;
 
@@ -59,6 +72,9 @@ export class TestApiServer {
 		this.retentionLocks.clear();
 		this.creditBalance = { balance: 1000, reserved: 100, available: 900 };
 		this.transactions = this.generateMockTransactions();
+		this.entities.clear();
+		this.entityTags.clear();
+		this.initializeMockEntities();
 	}
 
 	private generateMockTransactions(): unknown[] {
@@ -88,6 +104,61 @@ export class TestApiServer {
 		}
 
 		return transactions;
+	}
+
+	private initializeMockEntities(): void {
+		// Create mock entities for testing
+		const mockEntities = [
+			{
+				id: "entity_1",
+				tags: ["interviewer", "sales-rep"],
+				createdAt: new Date(
+					Date.now() - 30 * 24 * 60 * 60 * 1000,
+				).toISOString(),
+				mediaCount: 5,
+				lastSeenAt: new Date(
+					Date.now() - 1 * 24 * 60 * 60 * 1000,
+				).toISOString(),
+			},
+			{
+				id: "entity_2",
+				tags: ["candidate", "round-1"],
+				createdAt: new Date(
+					Date.now() - 20 * 24 * 60 * 60 * 1000,
+				).toISOString(),
+				mediaCount: 3,
+				lastSeenAt: new Date(
+					Date.now() - 2 * 24 * 60 * 60 * 1000,
+				).toISOString(),
+			},
+			{
+				id: "entity_3",
+				tags: ["interviewer"],
+				createdAt: new Date(
+					Date.now() - 15 * 24 * 60 * 60 * 1000,
+				).toISOString(),
+				mediaCount: 10,
+				lastSeenAt: new Date(
+					Date.now() - 0.5 * 24 * 60 * 60 * 1000,
+				).toISOString(),
+			},
+			{
+				id: "entity_4",
+				tags: [],
+				createdAt: new Date(
+					Date.now() - 10 * 24 * 60 * 60 * 1000,
+				).toISOString(),
+				mediaCount: 1,
+				lastSeenAt: new Date(
+					Date.now() - 3 * 24 * 60 * 60 * 1000,
+				).toISOString(),
+			},
+		];
+
+		for (const entity of mockEntities) {
+			this.entities.set(entity.id, entity);
+			this.entityTags.set(entity.id, new Set(entity.tags));
+		}
 	}
 
 	get baseUrl(): string {
@@ -586,6 +657,183 @@ export class TestApiServer {
 			);
 		}
 
+		// Entity endpoints
+		if (req.method === "GET" && path === "/v1/entities") {
+			const limit = Number.parseInt(u.searchParams.get("limit") ?? "20", 10);
+			const cursor = u.searchParams.get("cursor");
+			const tagsParam = u.searchParams.get("tags");
+
+			// Parse tags filter
+			const filterTags = tagsParam ? tagsParam.split(",") : [];
+
+			// Get all entities
+			let allEntities = Array.from(this.entities.values());
+
+			// Filter by tags if provided (entities must have ALL specified tags)
+			if (filterTags.length > 0) {
+				allEntities = allEntities.filter((entity) => {
+					return filterTags.every((tag) => entity.tags.includes(tag));
+				});
+			}
+
+			// Apply cursor pagination
+			let startIdx = 0;
+			if (cursor) {
+				const cursorIdx = allEntities.findIndex((e) => e.id === cursor);
+				if (cursorIdx >= 0) {
+					startIdx = cursorIdx + 1;
+				}
+			}
+
+			const paginatedEntities = allEntities.slice(startIdx, startIdx + limit);
+			const hasMore = startIdx + limit < allEntities.length;
+			const nextCursor = hasMore
+				? paginatedEntities[paginatedEntities.length - 1]?.id
+				: undefined;
+
+			return this.json(
+				200,
+				{
+					entities: paginatedEntities,
+					cursor: nextCursor,
+					hasMore,
+				},
+				{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+			);
+		}
+
+		if (
+			req.method === "GET" &&
+			path.startsWith("/v1/entities/") &&
+			!path.includes("/tags")
+		) {
+			const entityId = decodeURIComponent(path.slice("/v1/entities/".length));
+			const entity = this.entities.get(entityId);
+
+			if (!entity) {
+				return this.json(
+					404,
+					{ error: { code: "not_found", message: "Entity not found" } },
+					{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+				);
+			}
+
+			return this.json(200, entity, {
+				"x-request-id": req.headers.get("x-request-id") ?? randomUUID(),
+			});
+		}
+
+		if (req.method === "POST" && path.includes("/tags")) {
+			const entityId = decodeURIComponent(
+				path.slice("/v1/entities/".length).replace("/tags", ""),
+			);
+			const entity = this.entities.get(entityId);
+
+			if (!entity) {
+				return this.json(
+					404,
+					{ error: { code: "not_found", message: "Entity not found" } },
+					{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+				);
+			}
+
+			const body = record.json as { tags?: string[] } | undefined;
+			const tagsToAdd = body?.tags ?? [];
+
+			// Add tags (idempotent)
+			const currentTags = this.entityTags.get(entityId) ?? new Set();
+			for (const tag of tagsToAdd) {
+				currentTags.add(tag);
+			}
+			this.entityTags.set(entityId, currentTags);
+
+			// Update entity tags
+			const updatedTags = Array.from(currentTags).sort();
+			entity.tags = updatedTags;
+
+			return this.json(
+				200,
+				{
+					entityId,
+					tags: updatedTags,
+				},
+				{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+			);
+		}
+
+		if (req.method === "DELETE" && path.includes("/tags")) {
+			const entityId = decodeURIComponent(
+				path.slice("/v1/entities/".length).replace("/tags", ""),
+			);
+			const entity = this.entities.get(entityId);
+
+			if (!entity) {
+				return this.json(
+					404,
+					{ error: { code: "not_found", message: "Entity not found" } },
+					{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+				);
+			}
+
+			const body = record.json as { tags?: string[] } | undefined;
+			const tagsToRemove = body?.tags ?? [];
+
+			// Remove tags (idempotent)
+			const currentTags = this.entityTags.get(entityId) ?? new Set();
+			for (const tag of tagsToRemove) {
+				currentTags.delete(tag);
+			}
+			this.entityTags.set(entityId, currentTags);
+
+			// Update entity tags
+			const updatedTags = Array.from(currentTags).sort();
+			entity.tags = updatedTags;
+
+			return this.json(
+				200,
+				{
+					entityId,
+					tags: updatedTags,
+				},
+				{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+			);
+		}
+
+		if (req.method === "PUT" && path.includes("/tags")) {
+			const entityId = decodeURIComponent(
+				path.slice("/v1/entities/".length).replace("/tags", ""),
+			);
+			const entity = this.entities.get(entityId);
+
+			if (!entity) {
+				return this.json(
+					404,
+					{ error: { code: "not_found", message: "Entity not found" } },
+					{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+				);
+			}
+
+			const body = record.json as { tags?: string[] } | undefined;
+			const newTags = body?.tags ?? [];
+
+			// Replace all tags
+			const currentTags = new Set(newTags);
+			this.entityTags.set(entityId, currentTags);
+
+			// Update entity tags
+			const updatedTags = Array.from(currentTags).sort();
+			entity.tags = updatedTags;
+
+			return this.json(
+				200,
+				{
+					entityId,
+					tags: updatedTags,
+				},
+				{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+			);
+		}
+
 		return this.json(
 			404,
 			{ error: { code: "not_found", message: `No route for ${path}` } },
@@ -600,6 +848,10 @@ export class TestApiServer {
 			media: jobId
 				? { mediaId: this.lastUploadedMediaId }
 				: { url: "https://example.com" },
+			entity: {
+				id: "entity_test_speaker",
+				tags: ["test-speaker"],
+			},
 			output: {
 				type: "markdown",
 				template: "general_report",

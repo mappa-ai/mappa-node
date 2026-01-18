@@ -389,6 +389,15 @@ export class ReportsResource {
 			baseTarget.on_miss = target.onMiss;
 		}
 
+		// Add tags and excludeTags to baseTarget (common to all strategies)
+		if (target.tags && target.tags.length > 0) {
+			baseTarget.tags = target.tags;
+		}
+
+		if (target.excludeTags && target.excludeTags.length > 0) {
+			baseTarget.exclude_tags = target.excludeTags;
+		}
+
 		switch (target.strategy) {
 			case "dominant": {
 				return { ...req, target: baseTarget };

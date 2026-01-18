@@ -95,6 +95,23 @@ type TargetBase = {
 	 * Behavior when the entity is not found.
 	 */
 	onMiss?: TargetOnMiss;
+	/**
+	 * Tags to apply to the selected entity after job completion.
+	 *
+	 * Tags must be 1-64 characters, alphanumeric with underscores and hyphens only.
+	 * Maximum 10 tags per request.
+	 *
+	 * @example ["interviewer", "sales-rep", "round-1"]
+	 */
+	tags?: string[];
+	/**
+	 * Exclude speakers whose entities have ANY of these tags from selection.
+	 *
+	 * Useful for filtering out known interviewers, hosts, etc.
+	 *
+	 * @example ["interviewer", "host"]
+	 */
+	excludeTags?: string[];
 };
 
 export type TargetDominant = TargetBase & {
@@ -240,6 +257,10 @@ export type ReportBase = {
 	createdAt: string;
 	subject?: Subject;
 	media: { url?: string; mediaId?: string };
+	entity: {
+		id: string;
+		tags: string[];
+	};
 	usage?: Usage;
 	metrics?: Record<string, JsonValue>;
 	raw?: JsonValue;
@@ -483,4 +504,41 @@ export function isPdfReport(report: Report): report is PdfReport {
  */
 export function isUrlReport(report: Report): report is UrlReport {
 	return report.output.type === "url";
+}
+
+export type Entity = {
+	id: string;
+	tags: string[];
+	createdAt: string;
+	mediaCount: number;
+	lastSeenAt: string | null;
+};
+
+export type EntityTagsResult = {
+	entityId: string;
+	tags: string[];
+};
+
+export type ListEntitiesOptions = CursorPaginationParams & {
+	/**
+	 * Filter entities by tags.
+	 * Entities must have ALL specified tags (AND logic).
+	 */
+	tags?: string[];
+};
+
+export type ListEntitiesResponse = {
+	entities: Entity[];
+	cursor?: string;
+	hasMore: boolean;
+};
+
+/**
+ * Type guard to check if a report has entity information.
+ * Always returns true since entity is always present in reports.
+ */
+export function hasEntity(report: Report): report is Report & {
+	entity: { id: string; tags: string[] };
+} {
+	return report.entity !== undefined && report.entity !== null;
 }
