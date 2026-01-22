@@ -17,11 +17,31 @@ export {
 	isUrlReport,
 } from "$/types";
 
-import { MappaError } from "$/errors";
+import { InsufficientCreditsError, MappaError } from "$/errors";
 
 /**
  * Type guard for catching SDK errors.
  */
 export function isMappaError(err: unknown): err is MappaError {
 	return err instanceof MappaError;
+}
+
+/**
+ * Type guard for insufficient credits errors.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await mappa.reports.createJob({ ... });
+ * } catch (err) {
+ *   if (isInsufficientCreditsError(err)) {
+ *     console.log(`Need ${err.required} credits, have ${err.available}`);
+ *   }
+ * }
+ * ```
+ */
+export function isInsufficientCreditsError(
+	err: unknown,
+): err is InsufficientCreditsError {
+	return err instanceof InsufficientCreditsError;
 }

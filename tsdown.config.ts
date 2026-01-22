@@ -5,5 +5,6 @@ export default {
 	dts: true,
 	platform: "node",
 	format: ["esm", "cjs"],
-	minify: true,
+	minify: false,
+	sourcemap: true,
 } satisfies UserConfig;

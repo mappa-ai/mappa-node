@@ -133,6 +133,7 @@ export class ReportsResource {
 	 *
 	 * Behavior:
 	 * - Validates {@link MediaIdRef} at runtime (must provide `{ mediaId }`).
+	 * - Defaults to `{ strategy: "dominant" }` when `target` is omitted.
 	 * - Applies an idempotency key: uses `req.idempotencyKey` when provided; otherwise generates a best-effort default.
 	 * - Forwards `req.requestId` to the transport for end-to-end correlation.
 	 *
@@ -377,8 +378,13 @@ export class ReportsResource {
 		req: ReportCreateJobRequest,
 	): Record<string, unknown> {
 		const target = req.target;
+
+		// Default to dominant strategy when target is not provided
 		if (!target) {
-			return req;
+			return {
+				...req,
+				target: { strategy: "dominant" },
+			};
 		}
 
 		const baseTarget: Record<string, unknown> = {

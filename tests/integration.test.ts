@@ -10,6 +10,8 @@ import type { MediaIdRef } from "../src/index";
 import {
 	AuthError,
 	hasEntity,
+	InsufficientCreditsError,
+	isInsufficientCreditsError,
 	isJsonReport,
 	isMarkdownReport,
 	isPdfReport,
@@ -285,6 +287,31 @@ describe("SDK integration", () => {
 		expect(thrown).toBeTruthy();
 	});
 
+	test("reports.createJob defaults to dominant target strategy", async () => {
+		const client = new Mappa({ apiKey: "test-api-key", baseUrl: api.baseUrl });
+
+		// Upload a file first
+		const upload = await client.files.upload({
+			file: new Uint8Array([1, 2, 3]),
+			contentType: "audio/wav",
+		});
+
+		// Create job WITHOUT specifying target
+		await client.reports.createJob({
+			media: { mediaId: upload.mediaId },
+			output: { type: "markdown", template: "general_report" },
+		});
+
+		// Verify the request body included the default target
+		const createJobReq = api.requests.find(
+			(r) => r.method === "POST" && r.path === "/v1/reports/jobs",
+		);
+		expect(createJobReq).toBeDefined();
+		const body = createJobReq?.json as { target?: { strategy?: string } };
+		expect(body.target).toBeDefined();
+		expect(body.target?.strategy).toBe("dominant");
+	});
+
 	test("maps 422 to ValidationError", async () => {
 		const client = new Mappa({ apiKey: "test-api-key", baseUrl: api.baseUrl });
 
@@ -301,6 +328,37 @@ describe("SDK integration", () => {
 		expect(thrown).toBeInstanceOf(ValidationError);
 		const e = thrown as ValidationError;
 		expect(e.status).toBe(422);
+	});
+
+	test("maps 402 insufficient_credits to InsufficientCreditsError", async () => {
+		const client = new Mappa({
+			apiKey: "test-api-key",
+			baseUrl: api.baseUrl,
+			defaultHeaders: { "X-Force-Error": "insufficient_credits" },
+		});
+
+		let thrown: unknown;
+		try {
+			await client.health.ping();
+		} catch (err) {
+			thrown = err;
+		}
+
+		expect(thrown).toBeInstanceOf(InsufficientCreditsError);
+		expect(isInsufficientCreditsError(thrown)).toBe(true);
+
+		const e = thrown as InsufficientCreditsError;
+		expect(e.status).toBe(402);
+		expect(e.code).toBe("insufficient_credits");
+		expect(e.required).toBe(10);
+		expect(e.available).toBe(0);
+
+		// Verify formatted toString output
+		const str = e.toString();
+		expect(str).toContain("InsufficientCreditsError");
+		expect(str).toContain("Status: 402");
+		expect(str).toContain("Required: 10 credits");
+		expect(str).toContain("Available: 0 credits");
 	});
 
 	describe("files resource", () => {

@@ -1,6 +1,7 @@
 import {
 	ApiError,
 	AuthError,
+	InsufficientCreditsError,
 	MappaError,
 	RateLimitError,
 	ValidationError,
@@ -143,6 +144,15 @@ function coerceApiError(res: Response, parsed: unknown): ApiError {
 			code,
 			details,
 		});
+
+	if (res.status === 402 && code === "insufficient_credits") {
+		return new InsufficientCreditsError(message, {
+			status: res.status,
+			requestId,
+			code,
+			details: details as { required?: number; available?: number },
+		});
+	}
 
 	if (res.status === 429) {
 		const e = new RateLimitError(message, {

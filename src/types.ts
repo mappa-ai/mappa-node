@@ -229,7 +229,7 @@ export type ReportCreateJobRequest = {
 	/**
 	 * Select the target entity for analysis.
 	 *
-	 * When omitted, the API defaults to the dominant speaker.
+	 * @defaultValue `{ strategy: "dominant" }` - analyzes the dominant speaker
 	 */
 	target?: TargetSelector;
 	options?: {

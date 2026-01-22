@@ -227,6 +227,22 @@ export class TestApiServer {
 			);
 		}
 
+		// Allow tests to force specific error responses via header.
+		const forceError = req.headers.get("X-Force-Error");
+		if (forceError === "insufficient_credits") {
+			return this.json(
+				402,
+				{
+					error: {
+						code: "insufficient_credits",
+						message: "Insufficient credits. Required: 10, Available: 0",
+						details: { required: 10, available: 0 },
+					},
+				},
+				{ "x-request-id": req.headers.get("x-request-id") ?? randomUUID() },
+			);
+		}
+
 		if (req.method === "GET" && path === "/v1/health/ping") {
 			if (this.state.rateLimitPingCount > 0) {
 				this.state.rateLimitPingCount -= 1;
