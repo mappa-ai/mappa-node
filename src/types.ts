@@ -255,6 +255,7 @@ export type ReportCreateJobRequest = {
 export type ReportBase = {
 	id: string;
 	createdAt: string;
+	jobId?: string;
 	subject?: Subject;
 	media: { url?: string; mediaId?: string };
 	entity: {
@@ -267,12 +268,12 @@ export type ReportBase = {
 };
 
 export type MarkdownReport = ReportBase & {
-	output: { type: "markdown" };
+	output: { type: "markdown"; template: ReportTemplateId };
 	markdown: string;
 };
 
 export type JsonReport = ReportBase & {
-	output: { type: "json" };
+	output: { type: "json"; template: ReportTemplateId };
 	sections: Array<{
 		section_title: string;
 		section_content: JsonValue;
@@ -280,15 +281,15 @@ export type JsonReport = ReportBase & {
 };
 
 export type PdfReport = ReportBase & {
-	output: { type: "pdf"; template: string };
+	output: { type: "pdf"; template: ReportTemplateId };
 	markdown: string;
 	pdfUrl: string;
 };
 
 export type UrlReport = ReportBase & {
-	output: { type: "url"; template: string };
-	markdown?: string;
-	sections?: Array<{
+	output: { type: "url"; template: ReportTemplateId };
+	markdown: string;
+	sections: Array<{
 		section_title: string;
 		section_content: JsonValue;
 	}>;

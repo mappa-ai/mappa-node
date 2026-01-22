@@ -771,7 +771,10 @@ describe("SDK integration", () => {
 				createdAt: new Date().toISOString(),
 				media: { mediaId: "media_1" },
 				entity: { id: "entity_test", tags: ["test"] },
-				output: { type: "markdown" as const, template: "general_report" },
+				output: {
+					type: "markdown" as const,
+					template: "general_report" as const,
+				},
 				markdown: "# Test",
 			};
 
@@ -787,7 +790,7 @@ describe("SDK integration", () => {
 				createdAt: new Date().toISOString(),
 				media: { mediaId: "media_1" },
 				entity: { id: "entity_test", tags: ["test"] },
-				output: { type: "json" as const, template: "general_report" },
+				output: { type: "json" as const, template: "general_report" as const },
 				sections: [],
 			};
 
@@ -803,7 +806,7 @@ describe("SDK integration", () => {
 				createdAt: new Date().toISOString(),
 				media: { mediaId: "media_1" },
 				entity: { id: "entity_test", tags: ["test"] },
-				output: { type: "pdf" as const, template: "general_report" },
+				output: { type: "pdf" as const, template: "general_report" as const },
 				markdown: "# Test",
 				pdfUrl: "https://example.com/report.pdf",
 			};
@@ -820,7 +823,9 @@ describe("SDK integration", () => {
 				createdAt: new Date().toISOString(),
 				media: { mediaId: "media_1" },
 				entity: { id: "entity_test", tags: ["test"] },
-				output: { type: "url" as const, template: "general_report" },
+				output: { type: "url" as const, template: "general_report" as const },
+				markdown: "# Test Report",
+				sections: [{ section_title: "Summary", section_content: "Content" }],
 				reportUrl: "https://example.com/report",
 			};
 
@@ -836,7 +841,10 @@ describe("SDK integration", () => {
 				createdAt: new Date().toISOString(),
 				media: { mediaId: "media_1" },
 				entity: { id: "entity_test", tags: ["test"] },
-				output: { type: "markdown" as const, template: "general_report" },
+				output: {
+					type: "markdown" as const,
+					template: "general_report" as const,
+				},
 				markdown: "# Test",
 			};
 
