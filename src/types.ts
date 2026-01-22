@@ -430,7 +430,7 @@ export type CreditUsage = {
 };
 
 /**
- * Options for long-polling job completion.
+ * Options for waiting on job completion.
  */
 export type WaitOptions = {
 	/**
@@ -439,20 +439,6 @@ export type WaitOptions = {
 	 * @defaultValue 300000
 	 */
 	timeoutMs?: number;
-
-	/**
-	 * Initial polling interval.
-	 *
-	 * @defaultValue 1000
-	 */
-	pollIntervalMs?: number;
-
-	/**
-	 * Maximum polling interval used with exponential backoff.
-	 *
-	 * @defaultValue 10000
-	 */
-	maxPollIntervalMs?: number;
 
 	/**
 	 * Optional callback invoked on meaningful job state transitions.

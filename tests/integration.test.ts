@@ -184,9 +184,6 @@ describe("SDK integration", () => {
 			},
 			{
 				wait: {
-					// Keep tests fast.
-					pollIntervalMs: 10,
-					maxPollIntervalMs: 20,
 					timeoutMs: 2_000,
 				},
 			},
@@ -201,7 +198,7 @@ describe("SDK integration", () => {
 			expect(markdownReport.markdown).toContain("Test Report");
 		}
 
-		// Consumer-relevant behavior: upload -> job creation -> polling -> report fetch.
+		// Consumer-relevant behavior: upload -> job creation -> SSE streaming -> report fetch.
 		const paths = api.requests.map((r) => r.path);
 		expect(paths).toContain("/v1/files");
 		expect(paths).toContain("/v1/reports/jobs");
@@ -225,8 +222,6 @@ describe("SDK integration", () => {
 			},
 			{
 				wait: {
-					pollIntervalMs: 10,
-					maxPollIntervalMs: 20,
 					timeoutMs: 2_000,
 				},
 			},

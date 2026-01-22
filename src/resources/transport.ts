@@ -1,4 +1,10 @@
-import { ApiError, AuthError, RateLimitError, ValidationError } from "$/errors";
+import {
+	ApiError,
+	AuthError,
+	MappaError,
+	RateLimitError,
+	ValidationError,
+} from "$/errors";
 import {
 	backoffMs,
 	getHeader,
@@ -7,6 +13,23 @@ import {
 	makeAbortError,
 	randomId,
 } from "$/utils";
+
+/**
+ * Options for SSE streaming.
+ */
+export type SSEStreamOptions = {
+	signal?: AbortSignal;
+	lastEventId?: string;
+};
+
+/**
+ * A parsed SSE event.
+ */
+export type SSEEvent<T = unknown> = {
+	id?: string;
+	event: string;
+	data: T;
+};
 
 export type Telemetry = {
 	onRequest?: (ctx: {
@@ -165,6 +188,175 @@ export class Transport {
 
 	constructor(private readonly opts: TransportOptions) {
 		this.fetchImpl = opts.fetch ?? fetch;
+	}
+
+	/**
+	 * Stream SSE events from a given path.
+	 *
+	 * Uses native `fetch` with streaming response body (not browser-only `EventSource`).
+	 * Parses SSE format manually from the `ReadableStream`.
+	 */
+	async *streamSSE<T>(
+		path: string,
+		opts?: SSEStreamOptions,
+	): AsyncGenerator<SSEEvent<T>> {
+		const url = buildUrl(this.opts.baseUrl, path);
+		const requestId = randomId("req");
+
+		const headers: Record<string, string> = {
+			Accept: "text/event-stream",
+			"Cache-Control": "no-cache",
+			"Mappa-Api-Key": this.opts.apiKey,
+			"X-Request-Id": requestId,
+			...(this.opts.userAgent ? { "User-Agent": this.opts.userAgent } : {}),
+			...(this.opts.defaultHeaders ?? {}),
+		};
+
+		if (opts?.lastEventId) {
+			headers["Last-Event-ID"] = opts.lastEventId;
+		}
+
+		const controller = new AbortController();
+		const timeout = setTimeout(
+			() => controller.abort(makeAbortError()),
+			this.opts.timeoutMs,
+		);
+
+		// Combine signals: if caller aborts, abort our controller
+		if (hasAbortSignal(opts?.signal)) {
+			const signal = opts?.signal;
+			if (signal?.aborted) {
+				clearTimeout(timeout);
+				throw makeAbortError();
+			}
+			signal?.addEventListener(
+				"abort",
+				() => controller.abort(makeAbortError()),
+				{ once: true },
+			);
+		}
+
+		this.opts.telemetry?.onRequest?.({ method: "GET", url, requestId });
+
+		let res: Response;
+		try {
+			res = await this.fetchImpl(url, {
+				method: "GET",
+				headers,
+				signal: controller.signal,
+			});
+		} catch (err) {
+			clearTimeout(timeout);
+			this.opts.telemetry?.onError?.({ url, requestId, error: err });
+			throw err;
+		}
+
+		if (!res.ok) {
+			clearTimeout(timeout);
+			const { parsed } = await readBody(res);
+			const apiErr = coerceApiError(res, parsed);
+			this.opts.telemetry?.onError?.({ url, requestId, error: apiErr });
+			throw apiErr;
+		}
+
+		if (!res.body) {
+			clearTimeout(timeout);
+			throw new MappaError("SSE response has no body");
+		}
+
+		try {
+			yield* this.parseSSEStream<T>(res.body);
+		} finally {
+			clearTimeout(timeout);
+		}
+	}
+
+	/**
+	 * Parse SSE events from a ReadableStream.
+	 *
+	 * SSE format:
+	 * ```
+	 * id: <id>
+	 * event: <type>
+	 * data: <json>
+	 *
+	 * ```
+	 * Each event is terminated by an empty line.
+	 */
+	private async *parseSSEStream<T>(
+		body: ReadableStream<Uint8Array>,
+	): AsyncGenerator<SSEEvent<T>> {
+		const decoder = new TextDecoder();
+		const reader = body.getReader();
+		let buffer = "";
+
+		try {
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+
+				buffer += decoder.decode(value, { stream: true });
+
+				// Process complete events (separated by double newline)
+				const events = buffer.split("\n\n");
+				// Keep the last incomplete chunk in buffer
+				buffer = events.pop() ?? "";
+
+				for (const eventText of events) {
+					if (!eventText.trim()) continue;
+
+					const event = this.parseSSEEvent<T>(eventText);
+					if (event) {
+						yield event;
+					}
+				}
+			}
+
+			// Process any remaining data in buffer
+			if (buffer.trim()) {
+				const event = this.parseSSEEvent<T>(buffer);
+				if (event) {
+					yield event;
+				}
+			}
+		} finally {
+			reader.releaseLock();
+		}
+	}
+
+	/**
+	 * Parse a single SSE event from text.
+	 */
+	private parseSSEEvent<T>(text: string): SSEEvent<T> | null {
+		const lines = text.split("\n");
+		let id: string | undefined;
+		let event = "message"; // default event type per SSE spec
+		let data = "";
+
+		for (const line of lines) {
+			if (line.startsWith("id:")) {
+				id = line.slice(3).trim();
+			} else if (line.startsWith("event:")) {
+				event = line.slice(6).trim();
+			} else if (line.startsWith("data:")) {
+				// Append to data (SSE allows multiple data lines)
+				if (data) data += "\n";
+				data += line.slice(5).trim();
+			}
+			// Ignore retry: and comments (lines starting with :)
+		}
+
+		if (!data) return null;
+
+		let parsedData: T;
+		try {
+			parsedData = JSON.parse(data) as T;
+		} catch {
+			// If data is not valid JSON, return it as-is (cast to T)
+			parsedData = data as unknown as T;
+		}
+
+		return { id, event, data: parsedData };
 	}
 
 	async request<T>(req: RequestOptions): Promise<TransportResponse<T>> {

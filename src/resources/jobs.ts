@@ -1,7 +1,20 @@
-import type { Transport } from "$/resources/transport";
-import type { Job, JobEvent, WaitOptions } from "$/types";
-import { JobCanceledError, JobFailedError } from "../errors";
-import { backoffMs, jitter, makeAbortError, nowMs } from "../utils";
+import { JobCanceledError, JobFailedError, MappaError } from "$/errors";
+import type { SSEEvent, Transport } from "$/resources/transport";
+import type { Job, JobEvent, JobStage, WaitOptions } from "$/types";
+import { makeAbortError } from "../utils";
+
+/**
+ * SSE event data shape from the server's job stream endpoint.
+ */
+type JobStreamEventData = {
+	status?: string;
+	stage?: string;
+	progress?: number;
+	job: Job;
+	reportId?: string;
+	error?: { code: string; message: string };
+	timestamp?: string; // for heartbeat
+};
 
 export class JobsResource {
 	constructor(private readonly transport: Transport) {}
@@ -39,123 +52,185 @@ export class JobsResource {
 		return res.data;
 	}
 
+	/**
+	 * Wait for a job to reach a terminal state.
+	 *
+	 * Uses SSE streaming internally for efficient real-time updates.
+	 */
 	async wait(jobId: string, opts?: WaitOptions): Promise<Job> {
 		const timeoutMs = opts?.timeoutMs ?? 5 * 60_000;
-		const basePoll = opts?.pollIntervalMs ?? 1000;
-		const maxPoll = opts?.maxPollIntervalMs ?? 10_000;
+		const controller = new AbortController();
 
-		const start = nowMs();
-		let attempt = 0;
-		let lastStage: string | undefined;
-		let lastStatus: string | undefined;
+		// Set up timeout
+		const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-		while (true) {
-			if (opts?.signal?.aborted) throw makeAbortError();
-
-			const job = await this.get(jobId, { signal: opts?.signal });
-
-			// Emit useful events only when something changes
-			if (job.status !== lastStatus) {
-				lastStatus = job.status;
-				opts?.onEvent?.({ type: "status", job });
+		// Combine signals if user provided one
+		if (opts?.signal) {
+			if (opts.signal.aborted) {
+				clearTimeout(timeoutId);
+				throw makeAbortError();
 			}
-			if (job.stage && job.stage !== lastStage) {
-				lastStage = job.stage;
-				opts?.onEvent?.({
-					type: "stage",
-					stage: job.stage,
-					progress: job.progress,
-					job,
-				});
-			}
+			opts.signal.addEventListener("abort", () => controller.abort(), {
+				once: true,
+			});
+		}
 
-			if (job.status === "succeeded") {
-				opts?.onEvent?.({ type: "terminal", job });
-				return job;
-			}
-			if (job.status === "failed") {
-				opts?.onEvent?.({ type: "terminal", job });
-				throw new JobFailedError(jobId, job.error?.message ?? "Job failed", {
-					requestId: job.requestId,
-					code: job.error?.code,
-					cause: job.error,
-				});
-			}
-			if (job.status === "canceled") {
-				opts?.onEvent?.({ type: "terminal", job });
-				throw new JobCanceledError(jobId, "Job canceled", {
-					requestId: job.requestId,
-					cause: job.error,
-				});
-			}
+		try {
+			for await (const event of this.stream(jobId, {
+				signal: controller.signal,
+				onEvent: opts?.onEvent,
+			})) {
+				if (event.type === "terminal") {
+					const job = event.job;
 
-			if (nowMs() - start > timeoutMs) {
-				throw new JobFailedError(
-					jobId,
-					`Timed out waiting for job ${jobId} after ${timeoutMs}ms`,
-					{
-						cause: {
+					if (job.status === "succeeded") {
+						return job;
+					}
+					if (job.status === "failed") {
+						throw new JobFailedError(
 							jobId,
-							timeoutMs,
-						},
-					},
-				);
+							job.error?.message ?? "Job failed",
+							{
+								requestId: job.requestId,
+								code: job.error?.code,
+								cause: job.error,
+							},
+						);
+					}
+					if (job.status === "canceled") {
+						throw new JobCanceledError(jobId, "Job canceled", {
+							requestId: job.requestId,
+							cause: job.error,
+						});
+					}
+				}
 			}
 
-			attempt += 1;
-			const sleep = jitter(backoffMs(attempt, basePoll, maxPoll));
-			await new Promise((r) => setTimeout(r, sleep));
+			// Stream ended without terminal event (timeout or unexpected close)
+			throw new JobFailedError(
+				jobId,
+				`Timed out waiting for job ${jobId} after ${timeoutMs}ms`,
+				{
+					cause: { jobId, timeoutMs },
+				},
+			);
+		} finally {
+			clearTimeout(timeoutId);
 		}
 	}
 
 	/**
-	 * Public stream API.
-	 * If you add SSE later, keep this signature and switch implementation internally.
-	 * For now, it yields events based on polling. Use `AbortSignal` to cancel streaming.
+	 * Stream job events via SSE.
+	 *
+	 * Yields events as they arrive from the server. Use `AbortSignal` to cancel streaming.
+	 * Automatically handles reconnection with `Last-Event-ID` for up to 3 retries.
 	 */
 	async *stream(
 		jobId: string,
 		opts?: { signal?: AbortSignal; onEvent?: (e: JobEvent) => void },
 	): AsyncIterable<JobEvent> {
-		let lastStage: string | undefined;
-		let lastStatus: string | undefined;
+		const maxRetries = 3;
+		let lastEventId: string | undefined;
+		let retries = 0;
 
-		while (true) {
-			if (opts?.signal?.aborted) return;
+		while (retries < maxRetries) {
+			try {
+				const sseStream = this.transport.streamSSE<JobStreamEventData>(
+					`/v1/jobs/${encodeURIComponent(jobId)}/stream`,
+					{ signal: opts?.signal, lastEventId },
+				);
 
-			const job = await this.get(jobId, { signal: opts?.signal });
+				for await (const sseEvent of sseStream) {
+					lastEventId = sseEvent.id;
 
-			if (job.status !== lastStatus) {
-				lastStatus = job.status;
-				const e: JobEvent = { type: "status", job };
-				opts?.onEvent?.(e);
-				yield e;
+					// Handle error event (job not found, etc.)
+					if (sseEvent.event === "error") {
+						const errorData = sseEvent.data;
+						throw new MappaError(
+							errorData.error?.message ?? "Unknown SSE error",
+							{ code: errorData.error?.code },
+						);
+					}
+
+					// Skip heartbeat events (internal keep-alive)
+					if (sseEvent.event === "heartbeat") {
+						continue;
+					}
+
+					// Map SSE event to JobEvent
+					const jobEvent = this.mapSSEToJobEvent(sseEvent);
+					if (jobEvent) {
+						opts?.onEvent?.(jobEvent);
+						yield jobEvent;
+
+						// Exit on terminal event
+						if (sseEvent.event === "terminal") {
+							return;
+						}
+					}
+
+					// Reset retry counter on successful event
+					retries = 0;
+				}
+
+				// Stream ended without terminal event (server timeout)
+				// Reconnect with last event ID
+				retries++;
+				if (retries < maxRetries) {
+					await this.backoff(retries);
+				}
+			} catch (error) {
+				// If aborted, rethrow immediately
+				if (opts?.signal?.aborted) {
+					throw error;
+				}
+
+				retries++;
+				if (retries >= maxRetries) {
+					throw error;
+				}
+
+				await this.backoff(retries);
 			}
-
-			if (job.stage && job.stage !== lastStage) {
-				lastStage = job.stage;
-				const e: JobEvent = {
-					type: "stage",
-					stage: job.stage,
-					progress: job.progress,
-					job,
-				};
-				opts?.onEvent?.(e);
-				yield e;
-			}
-
-			if (
-				job.status === "succeeded" ||
-				job.status === "failed" ||
-				job.status === "canceled"
-			) {
-				const e: JobEvent = { type: "terminal", job };
-				opts?.onEvent?.(e);
-				yield e;
-				return;
-			}
-
-			await new Promise((r) => setTimeout(r, 1000));
 		}
+
+		throw new MappaError(
+			`Failed to get status for job ${jobId} after ${maxRetries} retries`,
+		);
+	}
+
+	/**
+	 * Map an SSE event to a JobEvent.
+	 */
+	private mapSSEToJobEvent(
+		sseEvent: SSEEvent<JobStreamEventData>,
+	): JobEvent | null {
+		const data = sseEvent.data;
+
+		switch (sseEvent.event) {
+			case "status":
+				return { type: "status", job: data.job };
+			case "stage":
+				return {
+					type: "stage",
+					stage: data.stage as JobStage,
+					progress: data.progress,
+					job: data.job,
+				};
+			case "terminal":
+				return { type: "terminal", job: data.job };
+			default:
+				// Unknown event type, treat as status update
+				return { type: "status", job: data.job };
+		}
+	}
+
+	/**
+	 * Exponential backoff with jitter for reconnection.
+	 */
+	private async backoff(attempt: number): Promise<void> {
+		const delay = Math.min(1000 * 2 ** attempt, 10000);
+		const jitter = delay * 0.5 * Math.random();
+		await new Promise((r) => setTimeout(r, delay + jitter));
 	}
 }

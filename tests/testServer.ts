@@ -538,6 +538,92 @@ export class TestApiServer {
 			);
 		}
 
+		// SSE endpoint for job streaming
+		if (req.method === "GET" && path.match(/^\/v1\/jobs\/[^/]+\/stream$/)) {
+			const jobId = decodeURIComponent(
+				path.slice("/v1/jobs/".length).replace("/stream", ""),
+			);
+			const reportId = this.jobToReportId.get(jobId);
+			const lastEventId = req.headers.get("Last-Event-ID");
+
+			if (!reportId) {
+				// Return SSE error event for not found
+				return this.sseResponse([
+					{
+						id: "1",
+						event: "error",
+						data: {
+							error: { code: "not_found", message: "Job not found" },
+						},
+					},
+				]);
+			}
+
+			const calls = (this.jobCalls.get(jobId) ?? 0) + 1;
+			this.jobCalls.set(jobId, calls);
+
+			const baseJob = {
+				id: jobId,
+				type: "report.generate",
+				createdAt: new Date().toISOString(),
+				updatedAt: new Date().toISOString(),
+				requestId: req.headers.get("x-request-id") ?? randomUUID(),
+			};
+
+			// If reconnecting with Last-Event-ID, or after first call, return terminal
+			if (lastEventId || calls >= 2) {
+				return this.sseResponse([
+					{
+						id: "2",
+						event: "terminal",
+						data: {
+							status: "succeeded",
+							reportId,
+							job: {
+								...baseJob,
+								status: "succeeded",
+								stage: "finalizing",
+								reportId,
+							},
+						},
+					},
+				]);
+			}
+
+			// First call: return status event followed by terminal
+			return this.sseResponse([
+				{
+					id: "1",
+					event: "status",
+					data: {
+						status: "running",
+						stage: "extracting",
+						progress: 0.25,
+						job: {
+							...baseJob,
+							status: "running",
+							stage: "extracting",
+							progress: 0.25,
+						},
+					},
+				},
+				{
+					id: "2",
+					event: "terminal",
+					data: {
+						status: "succeeded",
+						reportId,
+						job: {
+							...baseJob,
+							status: "succeeded",
+							stage: "finalizing",
+							reportId,
+						},
+					},
+				},
+			]);
+		}
+
 		if (req.method === "GET" && path.startsWith("/v1/jobs/")) {
 			const jobId = decodeURIComponent(path.slice("/v1/jobs/".length));
 			const calls = (this.jobCalls.get(jobId) ?? 0) + 1;
@@ -871,6 +957,28 @@ export class TestApiServer {
 			headers: {
 				"content-type": "application/json",
 				...(headers ?? {}),
+			},
+		});
+	}
+
+	/**
+	 * Create an SSE response with the given events.
+	 */
+	private sseResponse(
+		events: Array<{ id: string; event: string; data: unknown }>,
+	): Response {
+		const body = events
+			.map(
+				(e) =>
+					`id: ${e.id}\nevent: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`,
+			)
+			.join("");
+
+		return new Response(body, {
+			status: 200,
+			headers: {
+				"Content-Type": "text/event-stream",
+				"Cache-Control": "no-cache",
 			},
 		});
 	}
