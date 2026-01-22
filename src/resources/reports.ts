@@ -8,7 +8,9 @@ import type {
 	MediaObject,
 	Report,
 	ReportCreateJobRequest,
+	ReportForOutputType,
 	ReportJobReceipt,
+	ReportOutputType,
 	ReportRunHandle,
 	WaitOptions,
 } from "$/types";
@@ -57,10 +59,9 @@ function validateMedia(media: MediaIdRef): void {
  * - `signal` (from {@link UploadRequest}) is applied to the upload request.
  *   Job creation only runs after a successful upload.
  */
-export type ReportCreateJobFromFileRequest = Omit<
-	ReportCreateJobRequest,
-	"media" | "idempotencyKey" | "requestId"
-> &
+export type ReportCreateJobFromFileRequest<
+	T extends ReportOutputType = ReportOutputType,
+> = Omit<ReportCreateJobRequest<T>, "media" | "idempotencyKey" | "requestId"> &
 	Omit<UploadRequest, "filename"> & {
 		/**
 		 * Optional filename to attach to the upload.
@@ -90,8 +91,10 @@ export type ReportCreateJobFromFileRequest = Omit<
  * - `idempotencyKey` applies to the *whole* download + upload + create-job sequence.
  * - `requestId` is forwarded to both upload and job creation calls.
  */
-export type ReportCreateJobFromUrlRequest = Omit<
-	ReportCreateJobRequest,
+export type ReportCreateJobFromUrlRequest<
+	T extends ReportOutputType = ReportOutputType,
+> = Omit<
+	ReportCreateJobRequest<T>,
 	"media" | "idempotencyKey" | "requestId"
 > & {
 	url: string;
@@ -142,13 +145,17 @@ export class ReportsResource {
 	 * - wait for completion and fetch the final report
 	 * - cancel the job, or fetch job/report metadata
 	 */
-	async createJob(req: ReportCreateJobRequest): Promise<ReportJobReceipt> {
+	async createJob<T extends ReportOutputType = ReportOutputType>(
+		req: ReportCreateJobRequest<T>,
+	): Promise<ReportJobReceipt<T>> {
 		validateMedia(req.media);
 
 		const idempotencyKey =
 			req.idempotencyKey ?? this.defaultIdempotencyKey(req);
 
-		const res = await this.transport.request<Omit<ReportJobReceipt, "handle">>({
+		const res = await this.transport.request<
+			Omit<ReportJobReceipt<T>, "handle">
+		>({
 			method: "POST",
 			path: "/v1/reports/jobs",
 			body: this.normalizeJobRequest(req),
@@ -157,12 +164,12 @@ export class ReportsResource {
 			retryable: true,
 		});
 
-		const receipt: ReportJobReceipt = {
+		const receipt: ReportJobReceipt<T> = {
 			...res.data,
 			requestId: res.requestId ?? res.data.requestId,
 		};
 
-		receipt.handle = this.makeHandle(receipt.jobId);
+		receipt.handle = this.makeHandle<T>(receipt.jobId);
 		return receipt;
 	}
 
@@ -172,9 +179,9 @@ export class ReportsResource {
 	 * Keeps `createJob()` strict about `media: { mediaId }` while offering a
 	 * convenient helper when you start from raw bytes.
 	 */
-	async createJobFromFile(
-		req: ReportCreateJobFromFileRequest,
-	): Promise<ReportJobReceipt> {
+	async createJobFromFile<T extends ReportOutputType = ReportOutputType>(
+		req: ReportCreateJobFromFileRequest<T>,
+	): Promise<ReportJobReceipt<T>> {
 		const {
 			file,
 			contentType,
@@ -194,8 +201,8 @@ export class ReportsResource {
 			signal,
 		});
 
-		return this.createJob({
-			...(rest as Omit<ReportCreateJobRequest, "media">),
+		return this.createJob<T>({
+			...(rest as Omit<ReportCreateJobRequest<T>, "media">),
 			media: { mediaId: upload.mediaId },
 			idempotencyKey,
 			requestId,
@@ -218,9 +225,9 @@ export class ReportsResource {
 	 * - Only allows `http:` and `https:` URLs.
 	 * - Requires a resolvable `contentType` (from `req.contentType` or response header).
 	 */
-	async createJobFromUrl(
-		req: ReportCreateJobFromUrlRequest,
-	): Promise<ReportJobReceipt> {
+	async createJobFromUrl<T extends ReportOutputType = ReportOutputType>(
+		req: ReportCreateJobFromUrlRequest<T>,
+	): Promise<ReportJobReceipt<T>> {
 		const {
 			url,
 			contentType: contentTypeOverride,
@@ -270,8 +277,8 @@ export class ReportsResource {
 			signal,
 		});
 
-		return this.createJob({
-			...(rest as Omit<ReportCreateJobRequest, "media">),
+		return this.createJob<T>({
+			...(rest as Omit<ReportCreateJobRequest<T>, "media">),
 			media: { mediaId: upload.mediaId },
 			idempotencyKey,
 			requestId,
@@ -310,11 +317,11 @@ export class ReportsResource {
 	 * Convenience wrapper: createJob + wait + get
 	 * Use for scripts; for production prefer createJob + webhooks/stream.
 	 */
-	async generate(
-		req: ReportCreateJobRequest,
+	async generate<T extends ReportOutputType = ReportOutputType>(
+		req: ReportCreateJobRequest<T>,
 		opts?: { wait?: WaitOptions },
-	): Promise<Report> {
-		const receipt = await this.createJob(req);
+	): Promise<ReportForOutputType<T>> {
+		const receipt = await this.createJob<T>(req);
 		if (!receipt.handle) {
 			throw new MappaError("Job receipt is missing handle");
 		}
@@ -325,11 +332,11 @@ export class ReportsResource {
 	 * Convenience wrapper: createJobFromFile + wait + get.
 	 * Use for scripts; for production prefer createJobFromFile + webhooks/stream.
 	 */
-	async generateFromFile(
-		req: ReportCreateJobFromFileRequest,
+	async generateFromFile<T extends ReportOutputType = ReportOutputType>(
+		req: ReportCreateJobFromFileRequest<T>,
 		opts?: { wait?: WaitOptions },
-	): Promise<Report> {
-		const receipt = await this.createJobFromFile(req);
+	): Promise<ReportForOutputType<T>> {
+		const receipt = await this.createJobFromFile<T>(req);
 		if (!receipt.handle) throw new MappaError("Job receipt is missing handle");
 		return receipt.handle.wait(opts?.wait);
 	}
@@ -338,16 +345,18 @@ export class ReportsResource {
 	 * Convenience wrapper: createJobFromUrl + wait + get.
 	 * Use for scripts; for production prefer createJobFromUrl + webhooks/stream.
 	 */
-	async generateFromUrl(
-		req: ReportCreateJobFromUrlRequest,
+	async generateFromUrl<T extends ReportOutputType = ReportOutputType>(
+		req: ReportCreateJobFromUrlRequest<T>,
 		opts?: { wait?: WaitOptions },
-	): Promise<Report> {
-		const receipt = await this.createJobFromUrl(req);
+	): Promise<ReportForOutputType<T>> {
+		const receipt = await this.createJobFromUrl<T>(req);
 		if (!receipt.handle) throw new MappaError("Job receipt is missing handle");
 		return receipt.handle.wait(opts?.wait);
 	}
 
-	makeHandle(jobId: string): ReportRunHandle {
+	makeHandle<T extends ReportOutputType = ReportOutputType>(
+		jobId: string,
+	): ReportRunHandle<T> {
 		const self = this;
 		return {
 			jobId,
@@ -355,17 +364,18 @@ export class ReportsResource {
 				signal?: AbortSignal;
 				onEvent?: (e: JobEvent) => void;
 			}) => self.jobs.stream(jobId, opts),
-			async wait(opts?: WaitOptions): Promise<Report> {
+			async wait(opts?: WaitOptions): Promise<ReportForOutputType<T>> {
 				const terminal = await self.jobs.wait(jobId, opts);
 				if (!terminal.reportId)
 					throw new MappaError(
 						`Job ${jobId} succeeded but no reportId was returned`,
 					);
-				return self.get(terminal.reportId);
+				return self.get(terminal.reportId) as Promise<ReportForOutputType<T>>;
 			},
 			cancel: () => self.jobs.cancel(jobId),
 			job: () => self.jobs.get(jobId),
-			report: () => self.getByJob(jobId),
+			report: () =>
+				self.getByJob(jobId) as Promise<ReportForOutputType<T> | null>,
 		};
 	}
 

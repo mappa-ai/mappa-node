@@ -6,7 +6,13 @@ import {
 	expect,
 	test,
 } from "bun:test";
-import type { MediaIdRef } from "../src/index";
+import type {
+	JsonReport,
+	MarkdownReport,
+	MediaIdRef,
+	PdfReport,
+	UrlReport,
+} from "../src/index";
 import {
 	AuthError,
 	hasEntity,
@@ -851,6 +857,62 @@ describe("SDK integration", () => {
 			expect(hasEntity(report)).toBe(true);
 			expect(report.entity.id).toBe("entity_test");
 			expect(report.entity.tags).toEqual(["test"]);
+		});
+	});
+
+	describe("type inference", () => {
+		test("ReportForOutputType maps output types to report types", () => {
+			// This test verifies compile-time type inference works correctly
+			// If it compiles without errors, the generic types are working
+
+			// MarkdownReport has required markdown field
+			const markdownReport: MarkdownReport = {
+				id: "r1",
+				createdAt: new Date().toISOString(),
+				media: { mediaId: "m1" },
+				entity: { id: "e1", tags: [] },
+				output: { type: "markdown", template: "general_report" },
+				markdown: "# Test",
+			};
+			expect(markdownReport.markdown).toBe("# Test");
+
+			// JsonReport has required sections field
+			const jsonReport: JsonReport = {
+				id: "r2",
+				createdAt: new Date().toISOString(),
+				media: { mediaId: "m1" },
+				entity: { id: "e1", tags: [] },
+				output: { type: "json", template: "general_report" },
+				sections: [{ section_title: "Summary", section_content: "Content" }],
+			};
+			expect(jsonReport.sections).toHaveLength(1);
+
+			// PdfReport has required markdown and pdfUrl fields
+			const pdfReport: PdfReport = {
+				id: "r3",
+				createdAt: new Date().toISOString(),
+				media: { mediaId: "m1" },
+				entity: { id: "e1", tags: [] },
+				output: { type: "pdf", template: "general_report" },
+				markdown: "# PDF Content",
+				pdfUrl: "https://example.com/report.pdf",
+			};
+			expect(pdfReport.pdfUrl).toBe("https://example.com/report.pdf");
+
+			// UrlReport has required markdown, sections, and reportUrl fields
+			const urlReport: UrlReport = {
+				id: "r4",
+				createdAt: new Date().toISOString(),
+				media: { mediaId: "m1" },
+				entity: { id: "e1", tags: [] },
+				output: { type: "url", template: "general_report" },
+				markdown: "# URL Content",
+				sections: [{ section_title: "Summary", section_content: "Content" }],
+				reportUrl: "https://example.com/reports/r4",
+			};
+			expect(urlReport.reportUrl).toBe("https://example.com/reports/r4");
+			expect(urlReport.markdown).toBe("# URL Content");
+			expect(urlReport.sections).toHaveLength(1);
 		});
 	});
 });

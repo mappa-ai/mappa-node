@@ -69,6 +69,27 @@ export type ReportOutput =
 	| ReportOutputForType<"pdf">
 	| ReportOutputForType<"url">;
 
+/**
+ * Report output configuration constrained to a specific output type.
+ * When T is a specific literal like "markdown", only markdown output configs are allowed.
+ * When T is the full union (ReportOutputType), all output configs are allowed.
+ *
+ * @example
+ * ```typescript
+ * type MarkdownOutput = ReportOutputFor<"markdown">; // Only markdown configs
+ * type AnyOutput = ReportOutputFor<ReportOutputType>; // All configs (same as ReportOutput)
+ * ```
+ */
+export type ReportOutputFor<T extends ReportOutputType> = T extends "markdown"
+	? ReportOutputForType<"markdown">
+	: T extends "json"
+		? ReportOutputForType<"json">
+		: T extends "pdf"
+			? ReportOutputForType<"pdf">
+			: T extends "url"
+				? ReportOutputForType<"url">
+				: ReportOutput;
+
 export type TargetStrategy =
 	| "dominant"
 	| "timerange"
@@ -216,7 +237,9 @@ export type WebhookConfig = {
 	headers?: Record<string, string>;
 };
 
-export type ReportCreateJobRequest = {
+export type ReportCreateJobRequest<
+	T extends ReportOutputType = ReportOutputType,
+> = {
 	subject?: Subject;
 	/**
 	 * Reference to already-uploaded media.
@@ -225,7 +248,7 @@ export type ReportCreateJobRequest = {
 	 * use helper methods like `reports.createJobFromUrl()` / `reports.createJobFromFile()`.
 	 */
 	media: MediaIdRef;
-	output: ReportOutput;
+	output: ReportOutputFor<T>;
 	/**
 	 * Select the target entity for analysis.
 	 *
@@ -298,13 +321,35 @@ export type UrlReport = ReportBase & {
 
 export type Report = MarkdownReport | JsonReport | PdfReport | UrlReport;
 
-export type ReportJobReceipt = {
+/**
+ * Maps an output type to its corresponding report type.
+ * Used for type-safe inference in generate methods.
+ *
+ * @example
+ * ```typescript
+ * type R = ReportForOutputType<"markdown">; // MarkdownReport
+ * type R = ReportForOutputType<"json">;     // JsonReport
+ * type R = ReportForOutputType<ReportOutputType>; // Report (union)
+ * ```
+ */
+export type ReportForOutputType<T extends ReportOutputType> =
+	T extends "markdown"
+		? MarkdownReport
+		: T extends "json"
+			? JsonReport
+			: T extends "pdf"
+				? PdfReport
+				: T extends "url"
+					? UrlReport
+					: Report;
+
+export type ReportJobReceipt<T extends ReportOutputType = ReportOutputType> = {
 	jobId: string;
 	status: "queued" | "running";
 	stage?: JobStage;
 	estimatedWaitSec?: number;
 	requestId?: string;
-	handle?: ReportRunHandle;
+	handle?: ReportRunHandle<T>;
 };
 
 export type FeedbackReceipt = {
@@ -453,16 +498,16 @@ export type WaitOptions = {
 };
 
 // Forward decl to avoid circular imports; implemented in reports resource.
-export type ReportRunHandle = {
+export type ReportRunHandle<T extends ReportOutputType = ReportOutputType> = {
 	jobId: string;
 	stream(opts?: {
 		signal?: AbortSignal;
 		onEvent?: (e: JobEvent) => void;
 	}): AsyncIterable<JobEvent>;
-	wait(opts?: WaitOptions): Promise<Report>;
+	wait(opts?: WaitOptions): Promise<ReportForOutputType<T>>;
 	cancel(): Promise<Job>;
 	job(): Promise<Job>;
-	report(): Promise<Report | null>;
+	report(): Promise<ReportForOutputType<T> | null>;
 };
 
 /**
