@@ -44,7 +44,13 @@ export type Telemetry = {
 		requestId?: string;
 		durationMs: number;
 	}) => void;
-	onError?: (ctx: { url: string; requestId?: string; error: unknown }) => void;
+	onError?: (ctx: {
+		url: string;
+		requestId?: string;
+		error: unknown;
+		/** Additional context for SSE streaming errors. */
+		context?: Record<string, unknown>;
+	}) => void;
 };
 
 export type TransportOptions = {
@@ -193,6 +199,33 @@ function shouldRetry(
 	return { retry: false };
 }
 
+/**
+ * Checks if an error is a network-level failure that's safe to retry.
+ * Includes socket failures, DNS errors, and fetch TypeErrors.
+ */
+function isNetworkError(err: unknown): boolean {
+	// Bun/Node fetch throws TypeError on network failure
+	if (err instanceof TypeError) return true;
+
+	// Check for common network error codes
+	if (err && typeof err === "object") {
+		const e = err as Record<string, unknown>;
+		const code = e.code;
+		if (typeof code === "string") {
+			// Common network error codes
+			return [
+				"FailedToOpenSocket",
+				"ECONNREFUSED",
+				"ECONNRESET",
+				"ETIMEDOUT",
+				"ENOTFOUND",
+				"EAI_AGAIN",
+			].includes(code);
+		}
+	}
+	return false;
+}
+
 export class Transport {
 	private readonly fetchImpl: typeof fetch;
 
@@ -205,6 +238,9 @@ export class Transport {
 	 *
 	 * Uses native `fetch` with streaming response body (not browser-only `EventSource`).
 	 * Parses SSE format manually from the `ReadableStream`.
+	 *
+	 * Automatically retries on network failures (socket errors, DNS failures, etc.)
+	 * up to `maxRetries` times with exponential backoff.
 	 */
 	async *streamSSE<T>(
 		path: string,
@@ -212,6 +248,7 @@ export class Transport {
 	): AsyncGenerator<SSEEvent<T>> {
 		const url = buildUrl(this.opts.baseUrl, path);
 		const requestId = randomId("req");
+		const maxRetries = Math.max(0, this.opts.maxRetries);
 
 		const headers: Record<string, string> = {
 			Accept: "text/event-stream",
@@ -226,59 +263,96 @@ export class Transport {
 			headers["Last-Event-ID"] = opts.lastEventId;
 		}
 
-		const controller = new AbortController();
-		const timeout = setTimeout(
-			() => controller.abort(makeAbortError()),
-			this.opts.timeoutMs,
-		);
+		let res: Response | undefined;
+		let lastError: unknown;
 
-		// Combine signals: if caller aborts, abort our controller
-		if (hasAbortSignal(opts?.signal)) {
-			const signal = opts?.signal;
-			if (signal?.aborted) {
-				clearTimeout(timeout);
-				throw makeAbortError();
-			}
-			signal?.addEventListener(
-				"abort",
+		// Retry loop for initial connection
+		for (let attempt = 0; attempt <= maxRetries; attempt++) {
+			const controller = new AbortController();
+			const timeout = setTimeout(
 				() => controller.abort(makeAbortError()),
-				{ once: true },
+				this.opts.timeoutMs,
 			);
+
+			// Combine signals: if caller aborts, abort our controller
+			if (hasAbortSignal(opts?.signal)) {
+				const signal = opts?.signal;
+				if (signal?.aborted) {
+					clearTimeout(timeout);
+					throw makeAbortError();
+				}
+				signal?.addEventListener(
+					"abort",
+					() => controller.abort(makeAbortError()),
+					{ once: true },
+				);
+			}
+
+			this.opts.telemetry?.onRequest?.({ method: "GET", url, requestId });
+
+			try {
+				res = await this.fetchImpl(url, {
+					method: "GET",
+					headers,
+					signal: controller.signal,
+				});
+				clearTimeout(timeout);
+
+				// Check for non-OK responses (5xx are retryable)
+				if (!res.ok) {
+					const { parsed } = await readBody(res);
+					const apiErr = coerceApiError(res, parsed);
+
+					this.opts.telemetry?.onError?.({
+						url,
+						requestId,
+						error: apiErr,
+						context: { attempt, lastEventId: opts?.lastEventId },
+					});
+
+					// Retry on 5xx errors
+					if (res.status >= 500 && res.status <= 599 && attempt < maxRetries) {
+						const delay = jitter(backoffMs(attempt + 1, 500, 4000));
+						await new Promise((r) => setTimeout(r, delay));
+						continue;
+					}
+
+					throw apiErr;
+				}
+
+				// Success - exit retry loop
+				break;
+			} catch (err) {
+				clearTimeout(timeout);
+				lastError = err;
+
+				this.opts.telemetry?.onError?.({
+					url,
+					requestId,
+					error: err,
+					context: { attempt, lastEventId: opts?.lastEventId },
+				});
+
+				// Check if retryable network error
+				if (isNetworkError(err) && attempt < maxRetries) {
+					const delay = jitter(backoffMs(attempt + 1, 500, 4000));
+					await new Promise((r) => setTimeout(r, delay));
+					continue;
+				}
+
+				throw err;
+			}
 		}
 
-		this.opts.telemetry?.onRequest?.({ method: "GET", url, requestId });
-
-		let res: Response;
-		try {
-			res = await this.fetchImpl(url, {
-				method: "GET",
-				headers,
-				signal: controller.signal,
-			});
-		} catch (err) {
-			clearTimeout(timeout);
-			this.opts.telemetry?.onError?.({ url, requestId, error: err });
-			throw err;
-		}
-
-		if (!res.ok) {
-			clearTimeout(timeout);
-			const { parsed } = await readBody(res);
-			const apiErr = coerceApiError(res, parsed);
-			this.opts.telemetry?.onError?.({ url, requestId, error: apiErr });
-			throw apiErr;
+		if (!res) {
+			throw lastError;
 		}
 
 		if (!res.body) {
-			clearTimeout(timeout);
 			throw new MappaError("SSE response has no body");
 		}
 
-		try {
-			yield* this.parseSSEStream<T>(res.body);
-		} finally {
-			clearTimeout(timeout);
-		}
+		yield* this.parseSSEStream<T>(res.body);
 	}
 
 	/**

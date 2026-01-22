@@ -218,3 +218,61 @@ export class JobCanceledError extends MappaError {
 		return lines.join("\n");
 	}
 }
+
+/**
+ * Error thrown when SSE streaming fails after all retries.
+ *
+ * Includes recovery metadata to allow callers to resume or retry:
+ * - `jobId`: The job being streamed (when known)
+ * - `lastEventId`: Last successfully received event ID for resumption
+ * - `url`: The stream URL that failed
+ * - `retryCount`: Number of retries attempted
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   for await (const event of mappa.jobs.stream(jobId)) { ... }
+ * } catch (err) {
+ *   if (err instanceof StreamError) {
+ *     console.log(`Stream failed for job ${err.jobId}`);
+ *     console.log(`Last event ID: ${err.lastEventId}`);
+ *     // Can retry with: mappa.jobs.stream(err.jobId)
+ *   }
+ * }
+ * ```
+ */
+export class StreamError extends MappaError {
+	override name = "StreamError";
+	jobId?: string;
+	lastEventId?: string;
+	url?: string;
+	retryCount: number;
+
+	constructor(
+		message: string,
+		opts: {
+			jobId?: string;
+			lastEventId?: string;
+			url?: string;
+			retryCount: number;
+			requestId?: string;
+			cause?: unknown;
+		},
+	) {
+		super(message, { requestId: opts.requestId, cause: opts.cause });
+		this.jobId = opts.jobId;
+		this.lastEventId = opts.lastEventId;
+		this.url = opts.url;
+		this.retryCount = opts.retryCount;
+	}
+
+	override toString(): string {
+		const lines = [`${this.name}: ${this.message}`];
+		if (this.jobId) lines.push(`  Job ID: ${this.jobId}`);
+		if (this.lastEventId) lines.push(`  Last Event ID: ${this.lastEventId}`);
+		if (this.url) lines.push(`  URL: ${this.url}`);
+		lines.push(`  Retry Count: ${this.retryCount}`);
+		if (this.requestId) lines.push(`  Request ID: ${this.requestId}`);
+		return lines.join("\n");
+	}
+}

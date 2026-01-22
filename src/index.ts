@@ -17,7 +17,7 @@ export {
 	isUrlReport,
 } from "$/types";
 
-import { InsufficientCreditsError, MappaError } from "$/errors";
+import { InsufficientCreditsError, MappaError, StreamError } from "$/errors";
 
 /**
  * Type guard for catching SDK errors.
@@ -44,4 +44,27 @@ export function isInsufficientCreditsError(
 	err: unknown,
 ): err is InsufficientCreditsError {
 	return err instanceof InsufficientCreditsError;
+}
+
+/**
+ * Type guard for stream connection errors.
+ *
+ * Use this to detect streaming failures and access recovery metadata
+ * like `jobId`, `lastEventId`, and `retryCount`.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await mappa.reports.generate({ ... });
+ * } catch (err) {
+ *   if (isStreamError(err)) {
+ *     console.log(`Stream failed for job ${err.jobId}`);
+ *     console.log(`Last event ID: ${err.lastEventId}`);
+ *     console.log(`Retries attempted: ${err.retryCount}`);
+ *   }
+ * }
+ * ```
+ */
+export function isStreamError(err: unknown): err is StreamError {
+	return err instanceof StreamError;
 }

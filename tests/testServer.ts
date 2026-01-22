@@ -16,12 +16,18 @@ export type TestApiState = {
 	failPingCount: number;
 	/** Number of times /v1/health/ping should respond with 429 before succeeding. */
 	rateLimitPingCount: number;
+	/** Number of times /v1/jobs/:id/stream should fail with 502 before succeeding. */
+	failStreamCount: number;
 };
 
 export class TestApiServer {
 	private server?: ReturnType<typeof Bun.serve>;
 	public readonly requests: RecordedRequest[] = [];
-	public state: TestApiState = { failPingCount: 0, rateLimitPingCount: 0 };
+	public state: TestApiState = {
+		failPingCount: 0,
+		rateLimitPingCount: 0,
+		failStreamCount: 0,
+	};
 
 	private jobCalls: Map<string, number> = new Map();
 	private jobToReportId: Map<string, string> = new Map();
@@ -64,7 +70,11 @@ export class TestApiServer {
 
 	reset(): void {
 		this.requests.length = 0;
-		this.state = { failPingCount: 0, rateLimitPingCount: 0 };
+		this.state = {
+			failPingCount: 0,
+			rateLimitPingCount: 0,
+			failStreamCount: 0,
+		};
 		this.jobCalls.clear();
 		this.jobToReportId.clear();
 		this.lastUploadedMediaId = undefined;
@@ -556,6 +566,15 @@ export class TestApiServer {
 
 		// SSE endpoint for job streaming
 		if (req.method === "GET" && path.match(/^\/v1\/jobs\/[^/]+\/stream$/)) {
+			// Simulate stream connection failure
+			if (this.state.failStreamCount > 0) {
+				this.state.failStreamCount--;
+				return new Response(null, {
+					status: 502,
+					statusText: "Bad Gateway",
+				});
+			}
+
 			const jobId = decodeURIComponent(
 				path.slice("/v1/jobs/".length).replace("/stream", ""),
 			);

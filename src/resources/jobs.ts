@@ -1,4 +1,9 @@
-import { JobCanceledError, JobFailedError, MappaError } from "$/errors";
+import {
+	JobCanceledError,
+	JobFailedError,
+	MappaError,
+	StreamError,
+} from "$/errors";
 import type { SSEEvent, Transport } from "$/resources/transport";
 import type { Job, JobEvent, JobStage, WaitOptions } from "$/types";
 import { makeAbortError } from "../utils";
@@ -187,15 +192,29 @@ export class JobsResource {
 
 				retries++;
 				if (retries >= maxRetries) {
-					throw error;
+					// Wrap in StreamError with recovery metadata
+					throw new StreamError(
+						`Stream connection failed for job ${jobId} after ${maxRetries} retries`,
+						{
+							jobId,
+							lastEventId,
+							retryCount: retries,
+							cause: error,
+						},
+					);
 				}
 
 				await this.backoff(retries);
 			}
 		}
 
-		throw new MappaError(
+		throw new StreamError(
 			`Failed to get status for job ${jobId} after ${maxRetries} retries`,
+			{
+				jobId,
+				lastEventId,
+				retryCount: maxRetries,
+			},
 		);
 	}
 

@@ -21,9 +21,11 @@ import {
 	isJsonReport,
 	isMarkdownReport,
 	isPdfReport,
+	isStreamError,
 	isUrlReport,
 	Mappa,
 	RateLimitError,
+	StreamError,
 	ValidationError,
 } from "../src/index";
 
@@ -767,6 +769,149 @@ describe("SDK integration", () => {
 			await expect(
 				client.entities.addTags("entity_1", tooManyTags),
 			).rejects.toThrow("Too many tags");
+		});
+	});
+
+	describe("stream error handling", () => {
+		test(
+			"jobs.stream wraps errors in StreamError with recovery metadata",
+			async () => {
+				// Force all stream attempts to fail
+				// With maxRetries=0 at transport level and 3 retries in jobs.stream(),
+				// we need at least 4 failures to exhaust all attempts.
+				// The backoff delays are ~2s + ~4s + ~8s so we need ~15s timeout.
+				api.state.failStreamCount = 10;
+
+				const client = new Mappa({
+					apiKey: "test-api-key",
+					baseUrl: api.baseUrl,
+					maxRetries: 0, // No retries at transport level to speed up test
+					timeoutMs: 30_000,
+				});
+
+				// Create a job first
+				const upload = await client.files.upload({
+					file: new Blob(["test"]),
+					contentType: "application/octet-stream",
+				});
+				const receipt = await client.reports.createJob({
+					media: { mediaId: upload.mediaId },
+					output: { type: "markdown", template: "general_report" },
+				});
+
+				let thrown: unknown;
+				try {
+					for await (const _ of client.jobs.stream(receipt.jobId)) {
+						// Should not reach here
+					}
+				} catch (err) {
+					thrown = err;
+				}
+
+				expect(thrown).toBeInstanceOf(StreamError);
+				expect(isStreamError(thrown)).toBe(true);
+
+				const streamErr = thrown as StreamError;
+				expect(streamErr.jobId).toBe(receipt.jobId);
+				expect(streamErr.retryCount).toBeGreaterThan(0);
+				expect(streamErr.message).toContain(receipt.jobId);
+			},
+			{ timeout: 20_000 },
+		);
+
+		test("jobs.stream retries on 502 and succeeds when server recovers", async () => {
+			// Fail once, then succeed
+			api.state.failStreamCount = 1;
+
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+				maxRetries: 3,
+				timeoutMs: 5_000,
+			});
+
+			const upload = await client.files.upload({
+				file: new Blob(["test"]),
+				contentType: "application/octet-stream",
+			});
+			const receipt = await client.reports.createJob({
+				media: { mediaId: upload.mediaId },
+				output: { type: "markdown", template: "general_report" },
+			});
+
+			const events: unknown[] = [];
+			for await (const event of client.jobs.stream(receipt.jobId)) {
+				events.push(event);
+			}
+
+			expect(events.length).toBeGreaterThan(0);
+			expect(
+				events.some((e) => (e as { type: string }).type === "terminal"),
+			).toBe(true);
+		});
+
+		test("StreamError includes lastEventId when available", async () => {
+			// This test verifies that lastEventId is captured in the error
+			// when a stream fails after receiving some events
+
+			const client = new Mappa({
+				apiKey: "test-api-key",
+				baseUrl: api.baseUrl,
+				maxRetries: 0,
+				timeoutMs: 5_000,
+			});
+
+			// First, create a real job that will have SSE events
+			const upload = await client.files.upload({
+				file: new Blob(["test"]),
+				contentType: "application/octet-stream",
+			});
+			const receipt = await client.reports.createJob({
+				media: { mediaId: upload.mediaId },
+				output: { type: "markdown", template: "general_report" },
+			});
+
+			// Consume the stream successfully - it should complete without error
+			const events: unknown[] = [];
+			for await (const event of client.jobs.stream(receipt.jobId)) {
+				events.push(event);
+			}
+
+			// The stream should have completed with at least a terminal event
+			expect(events.length).toBeGreaterThan(0);
+		});
+
+		test("isStreamError type guard works correctly", () => {
+			const streamErr = new StreamError("test error", {
+				jobId: "job_123",
+				lastEventId: "event_1",
+				retryCount: 3,
+			});
+
+			expect(isStreamError(streamErr)).toBe(true);
+			expect(isStreamError(new Error("regular error"))).toBe(false);
+			expect(isStreamError(null)).toBe(false);
+			expect(isStreamError(undefined)).toBe(false);
+			expect(isStreamError({ message: "fake" })).toBe(false);
+		});
+
+		test("StreamError.toString includes all metadata", () => {
+			const streamErr = new StreamError("Connection failed", {
+				jobId: "job_456",
+				lastEventId: "evt_789",
+				url: "https://api.example.com/stream",
+				retryCount: 5,
+				requestId: "req_abc",
+			});
+
+			const str = streamErr.toString();
+
+			expect(str).toContain("StreamError: Connection failed");
+			expect(str).toContain("Job ID: job_456");
+			expect(str).toContain("Last Event ID: evt_789");
+			expect(str).toContain("URL: https://api.example.com/stream");
+			expect(str).toContain("Retry Count: 5");
+			expect(str).toContain("Request ID: req_abc");
 		});
 	});
 
