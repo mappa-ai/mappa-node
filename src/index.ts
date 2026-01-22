@@ -8,6 +8,14 @@
  */
 export * from "$/errors";
 export { Mappa } from "$/Mappa";
+export type {
+	ReportCompletedData,
+	ReportCompletedEvent,
+	ReportFailedData,
+	ReportFailedEvent,
+	WebhookEvent,
+	WebhookEventType,
+} from "$/resources/webhooks";
 export type * from "$/types";
 export {
 	hasEntity,

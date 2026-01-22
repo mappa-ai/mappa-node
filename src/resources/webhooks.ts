@@ -3,8 +3,57 @@ function isObject(v: unknown): v is Record<string, unknown> {
 }
 
 /**
+ * Webhook event types supported by the API.
+ */
+export type WebhookEventType = "report.completed" | "report.failed";
+
+/**
+ * Base webhook event structure.
+ */
+export interface WebhookEvent<T = unknown> {
+	type: string;
+	timestamp: string;
+	data: T;
+}
+
+/**
+ * Payload for successful report completion.
+ */
+export interface ReportCompletedData {
+	jobId: string;
+	reportId: string;
+	status: "succeeded";
+}
+
+/**
+ * Payload for failed report processing.
+ */
+export interface ReportFailedData {
+	jobId: string;
+	status: "failed";
+	error: {
+		code: string;
+		message: string;
+	};
+}
+
+/**
+ * Event emitted when a report completes successfully.
+ */
+export type ReportCompletedEvent = WebhookEvent<ReportCompletedData> & {
+	type: "report.completed";
+};
+
+/**
+ * Event emitted when a report fails.
+ */
+export type ReportFailedEvent = WebhookEvent<ReportFailedData> & {
+	type: "report.failed";
+};
+
+/**
  * Async signature verification using WebCrypto (works in modern Node and browsers).
- * Signature scheme placeholder:
+ * Signature scheme:
  *   headers["mappa-signature"] = "t=1700000000,v1=<hex_hmac_sha256>"
  * Signed payload: `${t}.${rawBody}`
  */
@@ -38,29 +87,30 @@ export class WebhooksResource {
 		return { ok: true };
 	}
 
-	parseEvent<T = unknown>(
-		payload: string,
-	): { id: string; type: string; createdAt: string; data: T } {
+	/**
+	 * Parse and validate a webhook event payload.
+	 *
+	 * @param payload - Raw JSON string from the webhook request body
+	 * @returns Parsed and validated webhook event
+	 * @throws Error if payload is invalid or missing required fields
+	 */
+	parseEvent<T = unknown>(payload: string): WebhookEvent<T> {
 		const raw: unknown = JSON.parse(payload);
 		if (!isObject(raw))
 			throw new Error("Invalid webhook payload: not an object");
 		const obj = raw;
 
-		const id = obj.id;
 		const type = obj.type;
-		const createdAt = obj.createdAt;
+		const timestamp = obj.timestamp;
 
-		if (typeof id !== "string")
-			throw new Error("Invalid webhook payload: id must be a string");
 		if (typeof type !== "string")
 			throw new Error("Invalid webhook payload: type must be a string");
-		if (typeof createdAt !== "string")
-			throw new Error("Invalid webhook payload: createdAt must be a string");
+		if (typeof timestamp !== "string")
+			throw new Error("Invalid webhook payload: timestamp must be a string");
 
 		return {
-			id,
 			type,
-			createdAt,
+			timestamp,
 			data: "data" in obj ? (obj.data as T) : (undefined as unknown as T),
 		};
 	}
